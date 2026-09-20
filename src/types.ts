@@ -72,14 +72,48 @@ export interface PluginState {
 }
 
 export interface TaskExecResult {
+  task_id?: string;
+
   client_id?: string;
   client?: string;
   uuid?: string;
+
+  /**
+   * Native Komari command output.
+   */
+  result?: string;
+
+  /**
+   * Normalized aliases used internally by this plugin.
+   */
   stdout?: string;
   stderr?: string;
-  exit_code?: number;
+
+  /**
+   * Komari:
+   * null   => task is still pending
+   * number => task has finished
+   */
+  exit_code?: number | null;
+
+  /**
+   * Komari:
+   * null      => task is still pending
+   * timestamp => task has finished
+   */
+  finished_at?: string | null;
+
+  created_at?: string;
+
+  client_info?: unknown;
+
+  /**
+   * Compatibility / synthetic fields.
+   */
   status?: string;
   success?: boolean;
   error?: string;
+
   [key: string]: unknown;
 }
+

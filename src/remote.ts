@@ -100,7 +100,14 @@ export function normalizeTaskResults(rawResults: unknown): Map<string, TaskExecR
         ? obj.exitCode
         : typeof obj.code === 'number'
         ? obj.code
-        : undefined;
+        : null;
+
+    const finishedAt =
+      typeof obj.finished_at === 'string'
+        ? obj.finished_at
+        : typeof obj.finishedAt === 'string'
+        ? obj.finishedAt
+        : null;
 
     const status =
       typeof obj.status === 'string'
@@ -119,14 +126,16 @@ export function normalizeTaskResults(rawResults: unknown): Map<string, TaskExecR
 
     if (clientId) {
       map.set(clientId, {
+        ...obj,
+
         client_id: clientId,
         stdout,
         stderr,
         exit_code: exitCode,
+        finished_at: finishedAt,
         status,
         success,
         error,
-        ...obj,
       });
     }
   };
@@ -155,19 +164,46 @@ export function normalizeTaskResults(rawResults: unknown): Map<string, TaskExecR
 export function isTerminalResult(res?: TaskExecResult): boolean {
   if (!res) return false;
 
-  if (res.status) {
+  // Native Komari completion signal.
+  if (typeof res.exit_code === 'number') {
+    return true;
+  }
+
+  // Secondary native completion signal.
+  if (
+    typeof res.finished_at === 'string' &&
+    res.finished_at.trim() !== ''
+  ) {
+    return true;
+  }
+
+  // Synthetic / compatibility terminal states.
+  if (typeof res.status === 'string') {
     const s = res.status.toLowerCase();
-    if (s === 'running' || s === 'queued' || s === 'pending') {
-      return false;
-    }
-    if (s === 'completed' || s === 'finished' || s === 'failed' || s === 'error' || s === 'timeout') {
+
+    if (
+      s === 'completed' ||
+      s === 'finished' ||
+      s === 'failed' ||
+      s === 'error' ||
+      s === 'timeout'
+    ) {
       return true;
+    }
+
+    if (
+      s === 'running' ||
+      s === 'queued' ||
+      s === 'pending'
+    ) {
+      return false;
     }
   }
 
-  if (res.exit_code !== undefined) return true;
-  if (res.error) return true;
-  if (res.stdout || res.stderr) return true;
+  if (res.error) {
+    return true;
+  }
+
   return false;
 }
 
@@ -225,6 +261,9 @@ export async function runRemoteTask(
       const currentMap = normalizeTaskResults(raw);
       for (const [uuid, r] of currentMap.entries()) {
         results.set(uuid, r);
+        console.log(
+          `[IPQA] TaskResult state: client=${uuid}, exit_code=${r.exit_code}, finished=${isTerminalResult(r)}, output_len=${(r.stdout || '').length}`
+        );
       }
 
       // Check if all targets have terminal results
@@ -239,6 +278,8 @@ export async function runRemoteTask(
     await sleep(pollIntervalMs);
   }
 
+  const timeoutSeconds = Math.round(timeoutMs / 1000);
+
   // Handle any nodes that timed out
   for (const uuid of targetUuids) {
     const res = results.get(uuid);
@@ -246,7 +287,7 @@ export async function runRemoteTask(
       results.set(uuid, {
         client_id: uuid,
         status: 'TIMEOUT',
-        error: 'Agent task timeout after 30s',
+        error: `Agent task timeout after ${timeoutSeconds}s`,
       });
     }
   }

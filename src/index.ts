@@ -92,16 +92,39 @@ export async function runPhase0PoC(server: ServerContext): Promise<boolean> {
       );
     }
 
-    const stdout = (res?.stdout || '').trim();
-    if (stdout.includes('IPQA_PLUGIN_POC')) {
-      console.log('[IPQA] Phase 0 PoC PASSED: admin:exec succeeded without 2FA interception.');
-      return true;
-    } else {
-      console.warn(`[IPQA] Phase 0 PoC: unexpected output: "${stdout.slice(0, 100)}"`);
+    if (!res) {
+      console.warn('[IPQA] Phase 0 PoC: no TaskResult returned.');
       return false;
     }
+
+    if (res.status === 'TIMEOUT') {
+      console.warn(`[IPQA] Phase 0 PoC: task timed out: ${res.error || ''}`);
+      return false;
+    }
+
+    if (typeof res.exit_code === 'number' && res.exit_code !== 0) {
+      console.warn(
+        `[IPQA] Phase 0 PoC: remote command failed with exit_code=${res.exit_code}, output="${(res.stdout || '').slice(0, 200)}"`
+      );
+      return false;
+    }
+
+    const stdout = (res.stdout || '').trim();
+
+    if (!stdout.includes('IPQA_PLUGIN_POC')) {
+      console.warn(
+        `[IPQA] Phase 0 PoC: command completed but marker was missing. output="${stdout.slice(0, 200)}"`
+      );
+      return false;
+    }
+
+    console.log(
+      '[IPQA] Phase 0 PoC PASSED: admin:exec and TaskResult polling are working.'
+    );
+
+    return true;
   } catch (err) {
-    console.error('[IPQA] Phase 0 PoC FAILED: admin:exec was intercepted or failed:', err);
+    console.error('[IPQA] Phase 0 PoC FAILED during remote execution:', err);
     return false;
   }
 }
@@ -133,7 +156,7 @@ export async function load(): Promise<void> {
   const pocOk = await runPhase0PoC(serverInstance);
   if (!pocOk) {
     console.error(
-      '[IPQA] Phase 0 PoC failed (2FA interception or execution failure). Stopping plugin scheduling.'
+      '[IPQA] Phase 0 PoC failed. Remote task submission or result polling is not working correctly. Stopping plugin scheduling.'
     );
     return;
   }
