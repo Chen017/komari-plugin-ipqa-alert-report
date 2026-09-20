@@ -163,9 +163,30 @@ const filesToZip = [
     name: 'assets/icon.svg',
     data: fs.readFileSync(path.join(ROOT_DIR, 'assets', 'icon.svg')),
   },
+  {
+    name: 'pages/admin.html',
+    data: fs.readFileSync(path.join(ROOT_DIR, 'pages', 'admin.html')),
+  },
 ];
 
 const zipPath = path.join(ROOT_DIR, 'ipqa-alert-report.zip');
 writeZip(filesToZip, zipPath);
 
 console.log(`[BUILD] Package created successfully: ${zipPath} (${fs.statSync(zipPath).size} bytes)`);
+
+// 3. Push installation package to Windows Desktop if available
+const desktopDir = path.join(
+  process.env.USERPROFILE || 'C:\\Users\\y2hlb',
+  'Desktop'
+);
+if (fs.existsSync(desktopDir)) {
+  const desktopZipPath = path.join(desktopDir, 'ipqa-alert-report.zip');
+  try {
+    fs.copyFileSync(zipPath, desktopZipPath);
+    console.log(`[BUILD] Pushed installation package to Desktop: ${desktopZipPath} (${fs.statSync(desktopZipPath).size} bytes)`);
+  } catch (err) {
+    console.error(`[BUILD] Failed to copy package to Desktop:`, err);
+  }
+} else {
+  console.warn(`[BUILD] Desktop directory not found at ${desktopDir}`);
+}

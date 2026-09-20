@@ -1,6 +1,7 @@
 import { fetchAllNodes } from './nodes.ts';
 import { runRemoteTask } from './remote.ts';
 import { registerScheduler, type ServerContext } from './scheduler.ts';
+import { runTestReport } from './test.ts';
 
 // Komari plugin runtime injects 'server' module or global definePlugin
 let serverInstance: ServerContext;
@@ -159,6 +160,68 @@ export async function load(): Promise<void> {
       '[IPQA] Phase 0 PoC failed. Remote task submission or result polling is not working correctly. Stopping plugin scheduling.'
     );
     return;
+  }
+
+  // Register manual test endpoints
+  // @ts-expect-error server.route
+  if (typeof serverInstance.route === 'function') {
+    const testRouteHandler = async (req: any, res: any) => {
+      try {
+        if (req && req.context && req.context.principal) {
+          const p = req.context.principal;
+          const isAdmin =
+            (p.type === 'user' && (p.roles?.includes('admin') || p.role === 'admin')) ||
+            p.is_api_key;
+          if (!isAdmin && p.type !== 'anonymous') {
+            res.statusCode = 403;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ success: false, error: 'Forbidden: Admin access required' }));
+            return;
+          }
+        }
+
+        let options = {};
+        if (typeof req.body === 'string' && req.body.trim()) {
+          try {
+            options = JSON.parse(req.body);
+          } catch {
+            // ignore
+          }
+        } else if (req.body && typeof req.body === 'object') {
+          options = req.body;
+        }
+
+        const result = await runTestReport(serverInstance, options);
+        res.statusCode = result.success ? 200 : 400;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify(result));
+      } catch (err: any) {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(
+          JSON.stringify({
+            success: false,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        );
+      }
+    };
+
+    // @ts-expect-error server.route
+    serverInstance.route('POST', '/api/plugin/ipqa-alert-report/test', testRouteHandler);
+    // @ts-expect-error server.route
+    serverInstance.route('POST', '/api/ipqa-alert-report/test', testRouteHandler);
+    console.log('[IPQA] Test endpoints registered at /api/plugin/ipqa-alert-report/test');
+  }
+
+  // Register manual test RPC
+  // @ts-expect-error server.registerRPC
+  if (typeof serverInstance.registerRPC === 'function') {
+    // @ts-expect-error server.registerRPC
+    serverInstance.registerRPC('plugin:ipqaTestRun', async (params: any) => {
+      return await runTestReport(serverInstance, params || {});
+    });
+    console.log('[IPQA] Test RPC registered: plugin:ipqaTestRun');
   }
 
   registerScheduler(serverInstance);

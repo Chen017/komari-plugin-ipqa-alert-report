@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IPQA 告警报告 - 测试运行</title>
+  <style>
+    :root {
+      --bg-color: #f8fafc;
+      --card-bg: #ffffff;
+      --text-color: #0f172a;
+      --text-muted: #64748b;
+      --border-color: #e2e8f0;
+      --primary-color: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-light: #eff6ff;
+      --success-color: #16a34a;
+      --success-light: #f0fdf4;
+      --warning-color: #ea580c;
+      --warning-light: #fff7ed;
+      --danger-color: #dc2626;
+      --danger-light: #fef2f2;
+      --info-color: #0284c7;
+      --code-bg: #0f172a;
+      --code-text: #f8fafc;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-color: #0f172a;
+        --card-bg: #1e293b;
+        --text-color: #f1f5f9;
+        --text-muted: #94a3b8;
+        --border-color: #334155;
+        --primary-color: #3b82f6;
+        --primary-hover: #60a5fa;
+        --primary-light: rgba(59, 130, 246, 0.15);
+        --success-color: #22c55e;
+        --success-light: rgba(34, 197, 94, 0.15);
+        --warning-color: #f97316;
+        --warning-light: rgba(249, 115, 22, 0.15);
+        --danger-color: #ef4444;
+        --danger-light: rgba(239, 68, 68, 0.15);
+        --info-color: #38bdf8;
+        --code-bg: #090d16;
+        --code-text: #e2e8f0;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      padding: 24px;
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .header {
+      margin-bottom: 24px;
+    }
+
+    .header h1 {
+      font-size: 22px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .header p {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin-top: 6px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 6px;
+      color: var(--text-color);
+    }
+
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      background: var(--card-bg);
+      color: var(--text-color);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    select:focus {
+      border-color: var(--primary-color);
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: var(--text-color);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .checkbox-group input {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 24px;
+      font-size: 15px;
+      font-weight: 600;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      background: var(--primary-color);
+      color: #ffffff;
+      transition: all 0.2s;
+    }
+
+    .btn:hover:not(:disabled) {
+      background: var(--primary-hover);
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .status-success {
+      background: var(--success-light);
+      color: var(--success-color);
+    }
+
+    .status-warning {
+      background: var(--warning-light);
+      color: var(--warning-color);
+    }
+
+    .status-danger {
+      background: var(--danger-light);
+      color: var(--danger-color);
+    }
+
+    .status-info {
+      background: var(--primary-light);
+      color: var(--primary-color);
+    }
+
+    .progress-box {
+      margin-top: 16px;
+      padding: 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: none;
+    }
+
+    .progress-box.active {
+      display: block;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    .stat-card {
+      background: var(--bg-color);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .stat-val {
+      font-size: 20px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      margin-top: 12px;
+    }
+
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    th {
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--bg-color);
+    }
+
+    .preview-box {
+      background: var(--code-bg);
+      color: var(--code-text);
+      padding: 16px;
+      border-radius: 8px;
+      font-family: Consolas, Monaco, "Courier New", monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 400px;
+      overflow-y: auto;
+      margin-top: 12px;
+    }
+
+    .spinner {
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top: 2px solid #ffffff;
+      width: 16px;
+      height: 16px;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🧪 IPQA 告警报告 - 测试与手动执行</h1>
+      <p>对于安装了开源项目 IP-Quality-Archive 的 VPS，通过 Komari 通知渠道发送 IP 质量的告警通知。</p>
+    </div>
+
+    <div style="margin: 0 0 20px 0; padding: 14px 18px; background: rgba(239, 68, 68, 0.08); border-left: 4px solid #dc2626; border-radius: 6px;">
+      <div style="color: #dc2626; font-weight: 700; font-size: 15px; margin-bottom: 6px;">
+        ⚠️ 插件仅适用于已经安装了 <a href="https://github.com/Chen017/IP-Quality-Archive" target="_blank" style="color: #dc2626; text-decoration: underline;">IP-Quality-Archive</a> 的 VPS，若未安装请先前往安装。
+      </div>
+      <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+        • <b>IPQA 项目链接</b>：<a href="https://github.com/Chen017/IP-Quality-Archive" target="_blank" style="color: var(--primary-color); text-decoration: underline;">https://github.com/Chen017/IP-Quality-Archive</a><br />
+        • <b>插件效果预览</b>：<a href="https://github.com/Chen017/komari-plugin-ipqa-alert-report" target="_blank" style="color: var(--primary-color); text-decoration: underline;">https://github.com/Chen017/komari-plugin-ipqa-alert-report</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">⚙️ 测试运行参数</div>
+      <div class="form-group">
+        <label for="timeWindow">查询时间窗口：</label>
+        <select id="timeWindow">
+          <option value="today_now" selected>今日告警 (当天 00:00 至当前时间，覆盖 04:00 任务及最新检测)</option>
+          <option value="today_0700">标准日常窗口 (当天 00:00:00 至 07:00:59)</option>
+          <option value="last_24h">最近 24 小时 (当前时间往前推 24 小时)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="checkbox-group">
+          <input type="checkbox" id="forceSend" />
+          <span>即使无告警也强制发送测试通知 (用于验证 Telegram/Komari 通知渠道)</span>
+        </label>
+      </div>
+
+      <button id="runBtn" class="btn" onclick="executeTest()">
+        <span id="btnIcon">⚡</span>
+        <span id="btnText">立即测试运行</span>
+      </button>
+
+      <div id="progressBox" class="progress-box"></div>
+    </div>
+
+    <div id="resultCard" class="card" style="display: none;">
+      <div class="card-title">📊 测试执行结果</div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">已检测节点</div>
+          <div id="statNodes" class="stat-val">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">总告警数</div>
+          <div id="statAlerts" class="stat-val">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">🔴 严重告警</div>
+          <div id="statCritical" class="stat-val" style="color: var(--danger-color)">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">🟠 警告告警</div>
+          <div id="statWarning" class="stat-val" style="color: var(--warning-color)">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">🔵 提示告警</div>
+          <div id="statInfo" class="stat-val" style="color: var(--info-color)">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">通知状态</div>
+          <div id="statNotify" class="stat-val" style="font-size: 15px; margin-top: 8px;">-</div>
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-top: 16px;">
+        <label>各节点采集明细：</label>
+        <table id="nodesTable">
+          <thead>
+            <tr>
+              <th>节点名称</th>
+              <th>采集状态</th>
+              <th>告警数量</th>
+              <th>详情 / 错误</th>
+            </tr>
+          </thead>
+          <tbody id="nodesTableBody"></tbody>
+        </table>
+      </div>
+
+      <div class="form-group" id="previewGroup" style="margin-top: 16px; display: none;">
+        <label>已生成的汇总通知文本预览：</label>
+        <div id="messagePreview" class="preview-box"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function executeTest() {
+      const btn = document.getElementById('runBtn');
+      const btnIcon = document.getElementById('btnIcon');
+      const btnText = document.getElementById('btnText');
+      const progressBox = document.getElementById('progressBox');
+      const resultCard = document.getElementById('resultCard');
+
+      const timeWindow = document.getElementById('timeWindow').value;
+      const forceSend = document.getElementById('forceSend').checked;
+
+      btn.disabled = true;
+      btnIcon.innerHTML = '<span class="spinner"></span>';
+      btnText.innerText = '正在向各节点下发任务并收集日志...';
+
+      progressBox.className = 'progress-box active status-info';
+      progressBox.innerText = '⏳ 正在通过 Komari 调度各 VPS 节点执行 alerts.log 提取，请稍候（约需 5-15 秒）...';
+      resultCard.style.display = 'none';
+
+      try {
+        const response = await fetch('/api/plugin/ipqa-alert-report/test', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            window: timeWindow,
+            forceSend: forceSend,
+          }),
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok || !data.success) {
+          progressBox.className = 'progress-box active status-danger';
+          progressBox.innerText = '❌ 测试失败：' + (data.error || data.message || '未知错误');
+          return;
+        }
+
+        progressBox.className = 'progress-box active status-success';
+        progressBox.innerText = '✅ ' + data.message;
+
+        // Populate results
+        resultCard.style.display = 'block';
+        document.getElementById('statNodes').innerText = data.selectedNodes ?? 0;
+        document.getElementById('statAlerts').innerText = data.alertCount ?? 0;
+        document.getElementById('statCritical').innerText = data.criticalCount ?? 0;
+        document.getElementById('statWarning').innerText = data.warningCount ?? 0;
+        document.getElementById('statInfo').innerText = data.infoCount ?? 0;
+
+        const statNotify = document.getElementById('statNotify');
+        if (data.notificationSent) {
+          statNotify.innerHTML = '<span class="status-badge status-success">✅ 已发送</span>';
+        } else {
+          statNotify.innerHTML = '<span class="status-badge status-warning">⏸ 未发送 (无告警)</span>';
+        }
+
+        // Table
+        const tbody = document.getElementById('nodesTableBody');
+        tbody.innerHTML = '';
+        if (Array.isArray(data.nodeResults)) {
+          data.nodeResults.forEach(node => {
+            const tr = document.createElement('tr');
+            const statusClass = node.status === 'OK' ? 'status-success' : 'status-danger';
+            tr.innerHTML = `
+              <td><strong>${escapeHtml(node.name)}</strong></td>
+              <td><span class="status-badge ${statusClass}">${escapeHtml(node.status)}</span></td>
+              <td>${node.alertCount || 0}</td>
+              <td style="color: ${node.error ? 'var(--danger-color)' : 'var(--text-muted)'}">${escapeHtml(node.error || '正常')}</td>
+            `;
+            tbody.appendChild(tr);
+          });
+        }
+
+        // Preview
+        const previewGroup = document.getElementById('previewGroup');
+        const previewBox = document.getElementById('messagePreview');
+        if (data.renderedMessage) {
+          previewGroup.style.display = 'block';
+          previewBox.innerText = data.renderedMessage;
+        } else {
+          previewGroup.style.display = 'none';
+        }
+
+      } catch (err) {
+        progressBox.className = 'progress-box active status-danger';
+        progressBox.innerText = '❌ 请求异常: ' + err.message;
+      } finally {
+        btn.disabled = false;
+        btnIcon.innerHTML = '⚡';
+        btnText.innerText = '立即测试运行';
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+  </script>
+</body>
+</html>

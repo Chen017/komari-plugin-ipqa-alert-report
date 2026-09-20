@@ -4,9 +4,18 @@
 [![Komari Version](https://img.shields.io/badge/Komari-%3E%3D1.4.3-blue)](https://github.com/komari-monitor)
 [![Compatible With](https://img.shields.io/badge/IPQA-IP--Quality--Archive-green)](https://github.com/Chen017/IP-Quality-Archive)
 
-**Komari IPQA 告警报告插件** 是为 [Komari](https://github.com/komari-monitor) 探针监控系统深度定制的自动化汇总与通知插件。
+> [!CAUTION]
+> <span style="color: #dc2626; font-weight: 700; font-size: 1.1em;">⚠️ 重要提示：本插件仅适用于已经安装了开源项目 <a href="https://github.com/Chen017/IP-Quality-Archive" target="_blank">IP-Quality-Archive</a> 的 VPS！若未安装，请先前往安装。</span>  
+> **IPQA 项目链接**：[https://github.com/Chen017/IP-Quality-Archive](https://github.com/Chen017/IP-Quality-Archive)  
+> **插件效果预览**：[https://github.com/Chen017/komari-plugin-ipqa-alert-report](https://github.com/Chen017/komari-plugin-ipqa-alert-report)  
+>
+> <span style="color: #dc2626; font-weight: 700;">⚠️ IMPORTANT: This plugin is ONLY for VPS nodes with <a href="https://github.com/Chen017/IP-Quality-Archive" target="_blank">IP-Quality-Archive</a> installed! Please install it first if not installed.</span>  
+> **IPQA Repository**: [https://github.com/Chen017/IP-Quality-Archive](https://github.com/Chen017/IP-Quality-Archive)  
+> **Plugin Preview**: [https://github.com/Chen017/komari-plugin-ipqa-alert-report](https://github.com/Chen017/komari-plugin-ipqa-alert-report)
 
-本插件专为部署了 [IP-Quality-Archive (IPQA)](https://github.com/Chen017/IP-Quality-Archive) 的节点设计：每天固定于**北京时间 07:00** 自动聚合各节点的每日 IP 质量变化告警，将分散的检测结果汇编为排版优雅的单条消息，通过 Komari 统一通知渠道（Telegram 等）推送到管理员终端。
+对于安装了开源项目 [IP-Quality-Archive (IPQA)](https://github.com/Chen017/IP-Quality-Archive) 的 VPS，通过 Komari 通知渠道发送 IP 质量的告警通知。
+
+For VPS nodes with the open-source project [IP-Quality-Archive (IPQA)](https://github.com/Chen017/IP-Quality-Archive) installed, this plugin sends IP quality alert notifications via Komari notification channels.
 
 ---
 
