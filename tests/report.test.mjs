@@ -140,7 +140,7 @@ describe('report.ts - Daily Report Aggregation & Rendering', () => {
     assert.ok(rendered.includes('Los Angeles'));
     assert.ok(rendered.includes('Tokyo'));
     assert.ok(!rendered.includes('Germany'));
-    assert.ok(rendered.includes('🔴 1  🟠 1  🔵 1'));
+    assert.ok(!rendered.includes('04:11'), 'Must not include alert timestamp');
   });
 
   it('Test 8: Node with collection failure -> displayed under collection failures section', () => {
@@ -207,7 +207,6 @@ describe('report.ts - Daily Report Aggregation & Rendering', () => {
 
     assert.equal(shouldSendNotification(report, baseConfig), true);
     const rendered = renderReport(report, baseConfig);
-    assert.ok(rendered.includes('⚠️ IPQA 采集异常'));
     assert.ok(rendered.includes('❌ 采集异常'));
     assert.ok(rendered.includes('Tokyo'));
     assert.ok(rendered.includes('alerts.log not found'));

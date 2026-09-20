@@ -114,10 +114,9 @@ export function truncateText(text: string, maxLength = 260): string {
  */
 function renderAlertItem(alert: IpqaAlert): string {
   const emoji = getSeverityEmoji(alert.level);
-  const time = formatAlertTime(alert.timestamp);
   const msg = truncateText(alert.message, 260);
-  const versionPart = alert.ipVersion ? `${alert.ipVersion} · ` : '';
-  return `${emoji} ${versionPart}${time}\n${msg}`;
+  const versionPart = alert.ipVersion ? ` ${alert.ipVersion}` : '';
+  return `${emoji}${versionPart}\n${msg}`;
 }
 
 /**
@@ -126,23 +125,6 @@ function renderAlertItem(alert: IpqaAlert): string {
  * Never splits into multiple messages!
  */
 export function renderReport(report: DailyReport, config: PluginConfig): string {
-  let headerText = '';
-  if (report.alertCount > 0) {
-    headerText = [
-      '⚠️ IPQA 每日告警',
-      `${report.beijingDate} · 北京时间 07:00`,
-      `异常节点：${report.alertNodeCount} / ${report.selectedNodeCount} · 告警：${report.alertCount}`,
-      `🔴 ${report.criticalCount}  🟠 ${report.warningCount}  🔵 ${report.infoCount}`,
-    ].join('\n');
-  } else {
-    // Only collection failures (Section 18 Case 3)
-    headerText = [
-      '⚠️ IPQA 采集异常',
-      `${report.beijingDate} · 北京时间 07:00`,
-      `异常节点：${report.failedNodes.length} / ${report.selectedNodeCount} · 采集失败：${report.failedNodes.length}`,
-    ].join('\n');
-  }
-
   // Build collection failures section if any
   let failureSection = '';
   if (config.notify_collection_failures && report.failedNodes.length > 0) {
@@ -152,7 +134,7 @@ export function renderReport(report: DailyReport, config: PluginConfig): string 
       failureLines.push(`无法读取 IPQA 告警：${node.error || node.status}`);
       failureLines.push('');
     }
-    failureSection = '\n\n' + failureLines.join('\n').trim();
+    failureSection = failureLines.join('\n').trim();
   }
 
   // Progressive truncation levels (Section 21):
@@ -211,33 +193,32 @@ export function renderReport(report: DailyReport, config: PluginConfig): string 
     return blocks.join('\n\n');
   }
 
+  function assemble(alertText: string): string {
+    if (alertText && failureSection) {
+      return `${alertText}\n\n${failureSection}`;
+    }
+    return alertText || failureSection;
+  }
+
   let alertBody = buildAlertBlocks(0);
-  let fullMessage = alertBody
-    ? `${headerText}\n\n${alertBody}${failureSection}`
-    : `${headerText}${failureSection}`;
+  let fullMessage = assemble(alertBody);
 
   // Strategy 4: Omit INFO first
   if (fullMessage.length > MAX_REPORT_LENGTH) {
     alertBody = buildAlertBlocks(1);
-    fullMessage = alertBody
-      ? `${headerText}\n\n${alertBody}${failureSection}`
-      : `${headerText}${failureSection}`;
+    fullMessage = assemble(alertBody);
   }
 
   // Strategy 5: Omit WARNING
   if (fullMessage.length > MAX_REPORT_LENGTH) {
     alertBody = buildAlertBlocks(2);
-    fullMessage = alertBody
-      ? `${headerText}\n\n${alertBody}${failureSection}`
-      : `${headerText}${failureSection}`;
+    fullMessage = assemble(alertBody);
   }
 
   // Strategy 9: If extreme cases still exceed, summarize highest severity per node
   if (fullMessage.length > MAX_REPORT_LENGTH) {
     alertBody = buildAlertBlocks(3);
-    fullMessage = alertBody
-      ? `${headerText}\n\n${alertBody}${failureSection}`
-      : `${headerText}${failureSection}`;
+    fullMessage = assemble(alertBody);
   }
 
   // Ultimate fallback truncation

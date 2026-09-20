@@ -22,19 +22,6 @@
     "allowRoutes": true,
     "timeout": 120
   },
-  "pages": [
-    {
-      "file": "pages/admin.html",
-      "title": {
-        "zh-CN": "IPQA 测试运行",
-        "zh_CN": "IPQA 测试运行",
-        "en": "IPQA Test Run"
-      },
-      "icon": "assets/icon.svg",
-      "type": "iframe",
-      "visibility": "admin"
-    }
-  ],
   "configuration": {
     "type": "managed",
     "name": "IPQA 告警报告设置",

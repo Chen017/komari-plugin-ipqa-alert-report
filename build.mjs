@@ -163,10 +163,6 @@ const filesToZip = [
     name: 'assets/icon.svg',
     data: fs.readFileSync(path.join(ROOT_DIR, 'assets', 'icon.svg')),
   },
-  {
-    name: 'pages/admin.html',
-    data: fs.readFileSync(path.join(ROOT_DIR, 'pages', 'admin.html')),
-  },
 ];
 
 const zipPath = path.join(ROOT_DIR, 'ipqa-alert-report.zip');
