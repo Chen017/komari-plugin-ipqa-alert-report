@@ -277,7 +277,7 @@ export function applyTemplate(
     warning_count: report.warningCount,
     info_count: report.infoCount,
     failed_nodes: report.failedNodes.length,
-    event: 'IPQAAlertReport',
+    event: 'IPQA 告警报告',
     emoji: '⚠️',
     time: '07:00',
   };

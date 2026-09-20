@@ -4,7 +4,7 @@ export async function sendNotification(
 ): Promise<void> {
   await server.call('admin:sendNotification', {
     event: {
-      event: 'IPQAAlertReport',
+      event: 'IPQA 告警报告',
       time: new Date().toISOString(),
       emoji: '⚠️',
       message,
