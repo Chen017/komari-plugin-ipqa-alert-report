@@ -1,0 +1,115 @@
+{
+  "$schema": "./node_modules/@komari-monitor/plugin-sdk/schema/komari-plugin.schema.json",
+  "name": {
+    "zh-CN": "IPQA 告警报告",
+    "zh_CN": "IPQA 告警报告",
+    "en": "IPQA Alert Report"
+  },
+  "short": "ipqa-alert-report",
+  "description": {
+    "zh-CN": "每天北京时间 07:00 汇总各节点 IP-Quality-Archive 告警并通过 Komari 通知渠道发送单条汇总",
+    "zh_CN": "每天北京时间 07:00 汇总各节点 IP-Quality-Archive 告警并通过 Komari 通知渠道发送单条汇总",
+    "en": "Summarizes IP-Quality-Archive alerts from nodes daily at 07:00 Asia/Shanghai and sends a single notification via Komari."
+  },
+  "version": "0.1.0",
+  "komari": ">=1.4.3",
+  "entry": "script.js",
+  "icon": "assets/icon.svg",
+  "author": "Chen017",
+  "permissions": {
+    "node": true,
+    "allowSystemRPC": true,
+    "timeout": 120
+  },
+  "configuration": {
+    "type": "managed",
+    "name": "IPQA 告警报告设置",
+    "data": [
+      {
+        "key": "enabled",
+        "name": {
+          "zh-CN": "启用 IPQA 告警报告",
+          "zh_CN": "启用 IPQA 告警报告",
+          "en": "Enable IPQA alert report"
+        },
+        "type": "switch",
+        "default": true
+      },
+      {
+        "key": "all_nodes",
+        "name": {
+          "zh-CN": "为全部节点启用",
+          "zh_CN": "为全部节点启用",
+          "en": "Enable for all nodes"
+        },
+        "type": "switch",
+        "default": false,
+        "help": "开启后忽略下方节点选择，将所有 Komari 节点纳入 IPQA 告警检查。仅建议所有节点都安装了 IPQA 时开启。"
+      },
+      {
+        "key": "nodes",
+        "name": {
+          "zh-CN": "选择节点",
+          "zh_CN": "选择节点",
+          "en": "Select nodes"
+        },
+        "type": "nodes",
+        "default": "[]",
+        "help": "选择安装了 IP-Quality-Archive 的 VPS。"
+      },
+      {
+        "name": {
+          "zh-CN": "固定每天北京时间 07:00 汇总当天 00:00–07:00 的 IPQA 告警。IPQA 应已在北京时间 04:00 完成自动检测。",
+          "zh_CN": "固定每天北京时间 07:00 汇总当天 00:00–07:00 的 IPQA 告警。IPQA 应已在北京时间 04:00 完成自动检测。",
+          "en": "Runs daily at 07:00 Asia/Shanghai and summarizes IPQA alerts from 00:00 to 07:00. IPQA is expected to finish its scheduled check at 04:00 Asia/Shanghai."
+        },
+        "type": "textbox"
+      },
+      {
+        "key": "min_severity",
+        "name": {
+          "zh-CN": "最低通知等级",
+          "zh_CN": "最低通知等级",
+          "en": "Minimum severity"
+        },
+        "type": "select",
+        "default": "INFO",
+        "options": "INFO,WARNING,CRITICAL",
+        "help": "最低通知严重等级：INFO 包含所有级别；WARNING 仅通知警告和严重；CRITICAL 仅通知严重告警。"
+      },
+      {
+        "key": "ignore_initial_archive",
+        "name": {
+          "zh-CN": "忽略首次建档记录",
+          "zh_CN": "忽略首次建档记录",
+          "en": "Ignore initial archive event"
+        },
+        "type": "switch",
+        "default": true,
+        "help": "开启后自动过滤 IPQA 首次建档记录「首次完成数据存档监测」。"
+      },
+      {
+        "key": "notify_collection_failures",
+        "name": {
+          "zh-CN": "采集失败时通知",
+          "zh_CN": "采集失败时通知",
+          "en": "Notify on collection failures"
+        },
+        "type": "switch",
+        "default": true,
+        "help": "当节点离线、Agent 超时或无法读取 alerts.log 时，是否发送采集异常通知。"
+      },
+      {
+        "key": "template",
+        "name": {
+          "zh-CN": "通知模板",
+          "zh_CN": "通知模板",
+          "en": "Notification template"
+        },
+        "type": "richtext",
+        "default": "",
+        "help": "留空使用默认报告正文。支持占位符: {{date}}, {{time}}, {{message}}, {{alert_count}}, {{alert_nodes}}, {{critical_count}}, {{warning_count}}, {{info_count}}, {{failed_nodes}}, {{nodes}}。"
+      }
+    ]
+  }
+}

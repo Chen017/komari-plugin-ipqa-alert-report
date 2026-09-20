@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="ipqaGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6" />
+      <stop offset="50%" stop-color="#6366F1" />
+      <stop offset="100%" stop-color="#EC4899" />
+    </linearGradient>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+  </defs>
+  <!-- Background rounded rect -->
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#shieldGrad)" stroke="url(#ipqaGrad)" stroke-width="4"/>
+  <!-- Network / Globe lines -->
+  <circle cx="64" cy="64" r="38" fill="none" stroke="#38BDF8" stroke-width="3" stroke-dasharray="4 3" opacity="0.6"/>
+  <ellipse cx="64" cy="64" rx="20" ry="38" fill="none" stroke="#818CF8" stroke-width="2.5" opacity="0.7"/>
+  <line x1="26" y1="64" x2="102" y2="64" stroke="#818CF8" stroke-width="2.5" opacity="0.7"/>
+  <!-- Central Pulse / Wave -->
+  <path d="M 40 64 L 52 64 L 58 48 L 68 80 L 76 56 L 82 64 L 92 64" fill="none" stroke="#F43F5E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Alert Notification Badge -->
+  <circle cx="94" cy="34" r="14" fill="#EF4444" stroke="#0F172A" stroke-width="3"/>
+  <text x="94" y="39" fill="#FFFFFF" font-family="system-ui, sans-serif" font-weight="900" font-size="16" text-anchor="middle">!</text>
+</svg>
