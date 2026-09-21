@@ -57,7 +57,12 @@ export function saveState(state: PluginState): void {
       fs.mkdirSync(dir, { recursive: true });
     }
     fs.writeFileSync(tempPath, JSON.stringify(state, null, 2), 'utf-8');
-    fs.renameSync(tempPath, filePath);
+    try {
+      fs.renameSync(tempPath, filePath);
+    } catch {
+      fs.copyFileSync(tempPath, filePath);
+      fs.unlinkSync(tempPath);
+    }
   } catch (err) {
     console.error('[IPQA] Failed to save state.json', err);
     try {
