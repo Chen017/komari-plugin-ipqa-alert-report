@@ -8,6 +8,7 @@ export interface PluginConfig {
   ignore_initial_archive: boolean;
   notify_collection_failures: boolean;
   template: string;
+  sync_archives?: boolean;
 }
 
 export interface KomariNode {

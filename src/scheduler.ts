@@ -69,6 +69,16 @@ export async function runDailyReport(server: ServerContext, now = new Date()): P
 
     console.log(`[IPQA] selected nodes: ${targets.length}`);
 
+    // Sync latest archives and update node-index cache if enabled
+    if (config.sync_archives) {
+      try {
+        const { syncFleetArchives } = await import('./ipqa/archive-sync.ts');
+        await syncFleetArchives(server, targets);
+      } catch (syncErr) {
+        console.warn('[IPQA] Fleet archive sync error during daily run:', syncErr);
+      }
+    }
+
     const { startEpoch, endEpoch, windowStart, windowEnd } =
       getBeijingDailyWindow(dateKey);
 

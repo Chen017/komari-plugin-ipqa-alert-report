@@ -7,7 +7,7 @@ ipqa-alert-report.zip
 dist/
 
 # Runtime & persistent state
-storage/
+/storage/
 
 # Logs
 *.log

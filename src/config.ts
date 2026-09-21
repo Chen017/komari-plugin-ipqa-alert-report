@@ -8,6 +8,7 @@ export const DEFAULT_CONFIG: PluginConfig = {
   ignore_initial_archive: true,
   notify_collection_failures: true,
   template: '',
+  sync_archives: false,
 };
 
 /**
@@ -80,5 +81,9 @@ export async function loadConfig(server: {
         ? Boolean(raw.notify_collection_failures)
         : DEFAULT_CONFIG.notify_collection_failures,
     template: typeof raw.template === 'string' ? raw.template : DEFAULT_CONFIG.template,
+    sync_archives:
+      raw.sync_archives !== undefined
+        ? Boolean(raw.sync_archives)
+        : DEFAULT_CONFIG.sync_archives,
   };
 }
