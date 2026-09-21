@@ -1,8 +1,9 @@
-# Komari IPQA 告警报告插件 (komari-plugin-ipqa-alert-report)
+# Komari IPQA 质量集成与告警报告插件 (komari-plugin-ipqa-alert-report)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Komari Version](https://img.shields.io/badge/Komari-%3E%3D1.4.3-blue)](https://github.com/komari-monitor)
 [![Compatible With](https://img.shields.io/badge/IPQA-IP--Quality--Archive-green)](https://github.com/Chen017/IP-Quality-Archive)
+[![Theme Support](https://img.shields.io/badge/Theme-Komari%20Emerald%20%3E%3D1.0.12-emerald)](https://github.com/Chen017/komari-theme-emerald)
 
 > [!CAUTION]
 > <span style="color: #dc2626; font-weight: 700; font-size: 1.1em;">⚠️ 重要提示：本插件仅适用于已经安装了开源项目 <a href="https://github.com/Chen017/IP-Quality-Archive" target="_blank">IP-Quality-Archive</a> 的 VPS！若未安装，请先前往安装。</span>  
@@ -13,15 +14,16 @@
 > **IPQA Repository**: [https://github.com/Chen017/IP-Quality-Archive](https://github.com/Chen017/IP-Quality-Archive)  
 > **Plugin Preview**: [https://github.com/Chen017/komari-plugin-ipqa-alert-report](https://github.com/Chen017/komari-plugin-ipqa-alert-report)
 
-对于安装了开源项目 [IP-Quality-Archive (IPQA)](https://github.com/Chen017/IP-Quality-Archive) 的 VPS，通过 Komari 通知渠道发送 IP 质量的告警通知。
-
-For VPS nodes with the open-source project [IP-Quality-Archive (IPQA)](https://github.com/Chen017/IP-Quality-Archive) installed, this plugin sends IP quality alert notifications via Komari notification channels.
+本插件为 Komari 提供原生的 IPQA (IP-Quality-Archive) 深度集成支持：一方面作为 **数据提供方 (Data Provider)**，增量同步 VPS 端的 IPQA 历史归档，提供版本化只读 HTTP API 供前端主题渲染集群质量概览与历史档案；另一方面保留 **日常告警聚合推送 (Daily Alert Report)** 功能，每日定时向 Telegram 等渠道发送聚合告警通知。
 
 ---
 
 ## 核心特性
 
-- 🌐 **定时精准聚合**：每日固定于北京时间 07:00 触发，收集当天 00:00:00 至 07:00:59 的告警，完美覆盖 IPQA 凌晨 04:00 的日常巡检窗口。
+- 🔄 **历史归档增量同步**：智能拉取 VPS 节点 `~/.ipqa/data/{v4,v6}` 原始归档清单，对比本地缓存仅下载新增或变更的归档文件，支持分批拉取与 base64 安全传输。
+- 📊 **版本化只读 HTTP API**：提供 `/api/plugin/ipqa-alert-report/v1` 标准接口，所有访客端 GET 请求直接读取本地缓存，**绝不触发远程命令执行**，保障性能与安全。
+- 🔍 **语义差异引擎**：每日自动计算并对比相邻归档，精准捕获 IP 归属、评分（IP2Location、Scamalytics、AbuseIPDB 等）、风险因子、流媒体/AI 解锁及 DNSBL 黑名单的细粒度变更。
+- 🌐 **定时精准告警聚合**：每日固定于北京时间 07:00 触发，收集当天 00:00:00 至 07:00:59 的告警，完美覆盖 IPQA 凌晨 04:00 的日常巡检窗口。
 - 🤫 **智能静默机制**：所有监控节点均正常且无告警时自动保持静默，绝不发送打扰消息；仅当发现真实告警或节点采集异常时主动提醒。
 - 📦 **单条聚合推送**：所有异常节点的告警汇总为单条消息发送，彻底杜绝多节点、多日志轰炸通知通道。
 - 🛡️ **双重防重与幂等**：内置本地执行状态追踪与内存锁，支持节点任务 10 分钟窗口自动补采，严格保障同一天仅成功执行一次完整推送。
@@ -37,19 +39,48 @@ For VPS nodes with the open-source project [IP-Quality-Archive (IPQA)](https://g
 ```
 [各 VPS 节点] 04:00 自动执行 IPQA 检测
        │
-       ▼ (结果记录至 ~/.ipqa/data/alerts.log)
+       ▼ (结果记录至 ~/.ipqa/data/alerts.log 及 data/{v4,v6}/*.json)
        │
 [Komari Server 插件] 07:00 (Asia/Shanghai) 定时调度触发
        │
        ├─► 过滤选定节点 (支持全部节点或指定节点列表)
-       ├─► 通过 Komari System RPC 并发远程读取 alerts.log
-       ├─► 统一换算节点本地时区至标准时间戳进行窗口匹配
+       ├─► 增量同步最新的归档文件清单并拉取缺失文件
+       ├─► 规范化归档为每日配对数据并持久化到本地存储
+       ├─► 运行语义差异引擎，记录并更新跨天变更记录
+       ├─► 并发远程读取 alerts.log 告警日志并完成时区窗口换算
        ├─► 级别过滤 (按 min_severity 与 ignore_initial_archive 规则)
        │
        ├─► [全节点无告警且正常] ──► 保持静默，更新状态
        │
        └─► [存在告警或采集异常] ──► 渲染报告正文 ──► 调用 Komari Notification 推送 (Telegram)
 ```
+
+---
+
+## 前端主题适配
+
+本插件设计与 **[Komari Emerald](https://github.com/Chen017/komari-theme-emerald)** (版本 `>= 1.0.12`) 深度协同：
+- **资源概览页**：自动读取 `/overview` 呈现集群 IPQA 统计卡片、节点网格、风险矩阵与流媒体解锁矩阵。
+- **节点详情快照**：在常规节点监控页展示当前节点 IP 质量快照。
+- **完整节点档案** (`/ip-quality/:uuid`)：支持按日历和归档日期逐日查阅历史测评、各引擎评分、风险因子树与原始 JSON。
+
+---
+
+## 只读 API 接口说明
+
+所有只读接口均挂载于 `/api/plugin/ipqa-alert-report/v1`，无需鉴权即可安全调用（纯缓存读取）：
+
+| 接口 | 方法 | 说明 |
+| :--- | :--- | :--- |
+| `/capabilities` | `GET` | 查询插件支持的 IPQA 功能特性与协议版本 |
+| `/overview` | `GET` | 获取全部节点最新的 IPQA 概要信息与风险概况 |
+| `/nodes/:uuid/latest` | `GET` | 获取指定节点最新一日的配对归档详情 |
+| `/nodes/:uuid/archives` | `GET` | 分页获取指定节点已有的历史归档日期列表 (`?limit=30`) |
+| `/nodes/:uuid/archives/:date` | `GET` | 获取指定节点在特定日期的配对归档详情及与前一天的变更 |
+| `/nodes/:uuid/changes` | `GET` | 获取指定节点的历史语义变更时间轴 |
+| `/nodes/:uuid/history/scores` | `GET` | 获取指定节点各评分引擎的历史趋势数据 |
+| `/nodes/:uuid/history/media` | `GET` | 获取指定节点流媒体与 AI 解锁的历史趋势数据 |
+
 
 ---
 
