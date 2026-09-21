@@ -1,7 +1,10 @@
-import { fetchAllNodes } from './nodes.ts';
+import { fetchAllNodes, resolveTargetNodes } from './nodes.ts';
 import { runRemoteTask } from './remote.ts';
 import { registerScheduler, type ServerContext } from './scheduler.ts';
 import { runTestReport } from './test.ts';
+import { registerApiRoutes } from './api/routes.ts';
+import { loadConfig } from './config.ts';
+import { syncFleetArchives } from './ipqa/archive-sync.ts';
 
 // Komari plugin runtime injects 'server' module or global definePlugin
 let serverInstance: ServerContext;
@@ -228,7 +231,6 @@ export async function load(): Promise<void> {
 
   // Register IPQA Versioned Public Read API (Section 25)
   try {
-    const { registerApiRoutes } = await import('./api/routes.ts');
     registerApiRoutes(serverInstance);
   } catch (apiErr) {
     console.warn('[IPQA] Failed to register API routes:', apiErr);
@@ -237,10 +239,6 @@ export async function load(): Promise<void> {
   // Initial history backfill in background after 60s (Section 20)
   setTimeout(async () => {
     try {
-      const { loadConfig } = await import('./config.ts');
-      const { fetchAllNodes, resolveTargetNodes } = await import('./nodes.ts');
-      const { syncFleetArchives } = await import('./ipqa/archive-sync.ts');
-
       const config = await loadConfig(serverInstance);
       const allNodes = await fetchAllNodes(serverInstance);
       const targets = resolveTargetNodes(config, allNodes);
