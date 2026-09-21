@@ -9,23 +9,126 @@ import {
 const PLUGIN_VERSION = '0.2.0';
 const API_PREFIX = '/api/plugin/ipqa-alert-report/v1';
 
-function sendJson(res: any, status: number, data: any, maxAgeSeconds = 60): void {
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.setHeader('Cache-Control', `public, max-age=${maxAgeSeconds}`);
-  res.end(JSON.stringify(data));
-}
-
 function parseUrl(urlStr: string): { pathname: string; query: Record<string, string> } {
   const [pathname = '', search = ''] = urlStr.split('?');
   const query: Record<string, string> = {};
   if (search) {
-    const params = new URLSearchParams(search);
-    for (const [key, value] of params.entries()) {
-      query[key] = value;
+    const pairs = search.split('&');
+    for (const pair of pairs) {
+      if (!pair) continue;
+      const idx = pair.indexOf('=');
+      if (idx !== -1) {
+        try {
+          const k = decodeURIComponent(pair.slice(0, idx));
+          const v = decodeURIComponent(pair.slice(idx + 1));
+          query[k] = v;
+        } catch {
+          query[pair.slice(0, idx)] = pair.slice(idx + 1);
+        }
+      } else {
+        try {
+          query[decodeURIComponent(pair)] = '';
+        } catch {
+          query[pair] = '';
+        }
+      }
     }
   }
   return { pathname, query };
+}
+
+function getRequestAndResponse(arg1: any, arg2: any): {
+  pathname: string;
+  query: Record<string, string>;
+  sendJson: (status: number, data: any, maxAgeSeconds?: number) => void;
+} {
+  let req = arg1;
+  let res = arg2;
+
+  // 1. If single argument (Gin context c)
+  if (!arg2 && arg1) {
+    req = arg1.Request || arg1.request || arg1;
+    res = arg1;
+  } else if (arg1 && !arg1.url && !arg1.URL && arg2 && (arg2.url || arg2.URL)) {
+    // Go http.HandlerFunc(w, r)
+    req = arg2;
+    res = arg1;
+  }
+
+  // 2. Extract pathname and query
+  let urlStr = '';
+  if (typeof req?.url === 'string') {
+    urlStr = req.url;
+  } else if (typeof req?.originalUrl === 'string') {
+    urlStr = req.originalUrl;
+  } else if (typeof req?.URL === 'string') {
+    urlStr = req.URL;
+  } else if (req?.URL && typeof req.URL === 'object') {
+    const p = req.URL.Path || req.URL.path || '';
+    const q = req.URL.RawQuery || req.URL.rawQuery || '';
+    urlStr = q ? `${p}?${q}` : p;
+  } else if (typeof req?.path === 'string') {
+    urlStr = req.path;
+  } else if (typeof arg1?.FullPath === 'function') {
+    urlStr = arg1.FullPath();
+  }
+
+  const { pathname, query } = parseUrl(urlStr);
+
+  // 3. Robust sendJson implementation supporting Gin, Go net/http, and Node
+  const sendJson = (status: number, data: any, maxAgeSeconds = 60) => {
+    try {
+      // Gin context: c.JSON(status, data)
+      if (typeof res?.JSON === 'function') {
+        if (typeof res?.Header === 'function') {
+          res.Header('Cache-Control', `public, max-age=${maxAgeSeconds}`);
+        }
+        res.JSON(status, data);
+        return;
+      }
+      if (typeof res?.json === 'function') {
+        if (typeof res?.header === 'function') {
+          res.header('Cache-Control', `public, max-age=${maxAgeSeconds}`);
+        } else if (typeof res?.setHeader === 'function') {
+          res.setHeader('Cache-Control', `public, max-age=${maxAgeSeconds}`);
+        }
+        res.json(data);
+        return;
+      }
+
+      // Go http.ResponseWriter: w.Header().Set(...), w.WriteHeader(status), w.Write(...)
+      if (typeof res?.Header === 'function' && typeof res?.WriteHeader === 'function') {
+        res.Header().Set('Content-Type', 'application/json; charset=utf-8');
+        res.Header().Set('Cache-Control', `public, max-age=${maxAgeSeconds}`);
+        res.WriteHeader(status);
+        if (typeof res?.Write === 'function') {
+          res.Write(JSON.stringify(data));
+        }
+        return;
+      }
+
+      // Node.js ServerResponse
+      if (typeof res?.status === 'function') {
+        res.status(status);
+      } else if (res) {
+        res.statusCode = status;
+      }
+      if (typeof res?.setHeader === 'function') {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Cache-Control', `public, max-age=${maxAgeSeconds}`);
+      }
+      const jsonStr = JSON.stringify(data);
+      if (typeof res?.send === 'function') {
+        res.send(jsonStr);
+      } else if (typeof res?.end === 'function') {
+        res.end(jsonStr);
+      }
+    } catch (err: any) {
+      console.error('[IPQA API] sendJson error:', err?.message || String(err));
+    }
+  };
+
+  return { pathname, query, sendJson };
 }
 
 // Data query handlers
@@ -168,25 +271,27 @@ export function registerApiRoutes(server: ServerContext): void {
   // @ts-expect-error server.route
   if (typeof server.route !== 'function') return;
 
-  const handler = async (req: any, res: any) => {
+  const handler = async (arg1: any, arg2: any) => {
+    let sendJsonFn: (status: number, data: any, maxAgeSeconds?: number) => void = () => {};
     try {
-      const { pathname, query } = parseUrl(req.url || '');
+      const { pathname, query, sendJson } = getRequestAndResponse(arg1, arg2);
+      sendJsonFn = sendJson;
 
       // 1. /capabilities
       if (pathname.endsWith('/capabilities')) {
-        sendJson(res, 200, handleGetCapabilities(), 300);
+        sendJson(200, handleGetCapabilities(), 300);
         return;
       }
 
       // 2. /overview
       if (pathname.endsWith('/overview')) {
-        sendJson(res, 200, handleGetOverview(), 60);
+        sendJson(200, handleGetOverview(), 60);
         return;
       }
 
       // 3. /nodes
       if (pathname.endsWith('/nodes')) {
-        sendJson(res, 200, handleGetNodes(), 60);
+        sendJson(200, handleGetNodes(), 60);
         return;
       }
 
@@ -200,7 +305,7 @@ export function registerApiRoutes(server: ServerContext): void {
         const action = parts[1];
 
         if (!uuid) {
-          sendJson(res, 400, { error: 'Missing node uuid' });
+          sendJson(400, { error: 'Missing node uuid' });
           return;
         }
 
@@ -208,10 +313,10 @@ export function registerApiRoutes(server: ServerContext): void {
         if (action === 'latest') {
           const latest = handleGetNodeLatest(uuid);
           if (!latest) {
-            sendJson(res, 404, { error: 'No archive found for node' });
+            sendJson(404, { error: 'No archive found for node' });
             return;
           }
-          sendJson(res, 200, latest, 60);
+          sendJson(200, latest, 60);
           return;
         }
 
@@ -221,44 +326,44 @@ export function registerApiRoutes(server: ServerContext): void {
           if (dateParam) {
             const report = handleGetNodeArchive(uuid, dateParam);
             if (!report) {
-              sendJson(res, 404, { error: `No archive found for date ${dateParam}` });
+              sendJson(404, { error: `No archive found for date ${dateParam}` });
               return;
             }
-            sendJson(res, 200, report, 3600);
+            sendJson(200, report, 3600);
             return;
           }
 
           const result = handleGetNodeArchives(uuid, Number(query.limit || 30), query.before);
-          sendJson(res, 200, result, 60);
+          sendJson(200, result, 60);
           return;
         }
 
         // 4c. /nodes/:uuid/changes
         if (action === 'changes') {
           const result = handleGetNodeChanges(uuid);
-          sendJson(res, 200, result, 60);
+          sendJson(200, result, 60);
           return;
         }
 
         // 4d. /nodes/:uuid/history/scores
         if (action === 'history' && parts[2] === 'scores') {
           const result = handleGetNodeScoreHistory(uuid);
-          sendJson(res, 200, result, 60);
+          sendJson(200, result, 60);
           return;
         }
 
         // 4e. /nodes/:uuid/history/media
         if (action === 'history' && parts[2] === 'media') {
           const result = handleGetNodeMediaHistory(uuid);
-          sendJson(res, 200, result, 60);
+          sendJson(200, result, 60);
           return;
         }
       }
 
-      sendJson(res, 404, { error: 'Not found' });
+      sendJson(404, { error: 'Not found' });
     } catch (err: any) {
-      console.error('[IPQA API] Error handling request:', err);
-      sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+      console.error('[IPQA API] Error handling request:', err?.message || String(err), err?.stack);
+      sendJsonFn(500, { error: err instanceof Error ? err.message : String(err) });
     }
   };
 
@@ -275,7 +380,6 @@ export function registerApiRoutes(server: ServerContext): void {
   safeRoute('GET', `${API_PREFIX}/overview`);
   safeRoute('GET', `${API_PREFIX}/nodes`);
   safeRoute('GET', `${API_PREFIX}/nodes/*action`);
-  safeRoute('GET', `${API_PREFIX}/nodes/*`);
 
   console.log(`[IPQA] Versioned read API routes registered under ${API_PREFIX}`);
 }

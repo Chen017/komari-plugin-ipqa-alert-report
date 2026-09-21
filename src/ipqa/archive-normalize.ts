@@ -6,6 +6,15 @@ import type {
 } from './types.ts';
 import { ARCHIVE_FILENAME_REGEX } from './archive-manifest.ts';
 
+export function toBeijingDateString(dateObj: Date): string {
+  const bjMs = dateObj.getTime() + 8 * 3600 * 1000;
+  const bjDate = new Date(bjMs);
+  const y = bjDate.getUTCFullYear();
+  const m = String(bjDate.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(bjDate.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 export function cleanRegion(raw: unknown): string {
   if (typeof raw !== 'string') return '--';
   const str = raw.trim();
@@ -33,7 +42,7 @@ export function normalizeRawIpqa(
 
   // Parse date and time from filename: YYYY-MM-DD_HHMMSS.json
   const match = ARCHIVE_FILENAME_REGEX.exec(filename);
-  const date = match ? match[1]! : new Date().toISOString().slice(0, 10);
+  let date = match ? match[1]! : new Date().toISOString().slice(0, 10);
 
   let timestamp = new Date().toISOString();
   if (filename.length >= 17) {
@@ -42,6 +51,11 @@ export function normalizeRawIpqa(
     const mm = timePart.slice(2, 4);
     const ss = timePart.slice(4, 6);
     timestamp = `${date}T${hh}:${mm}:${ss}Z`;
+    // Timezone correction: if the timestamp in UTC rolls into Beijing date, correct the date
+    const utcMs = Date.parse(timestamp);
+    if (Number.isFinite(utcMs)) {
+      date = toBeijingDateString(new Date(utcMs));
+    }
   }
 
   const rawInfo = (raw && typeof raw.Info === 'object' && raw.Info) || (raw && typeof raw.info === 'object' && raw.info) || {};
@@ -52,13 +66,57 @@ export function normalizeRawIpqa(
   const rawMail = (raw && typeof raw.Mail === 'object' && raw.Mail) || (raw && typeof raw.mail === 'object' && raw.mail) || {};
 
   // 1. Info
+  const rawIp = rawInfo.IP ?? rawInfo.ip ?? raw?.Head?.IP ?? raw?.Head?.ip ?? raw?.head?.IP ?? raw?.head?.ip ?? raw?.IP ?? raw?.ip;
+  
+  // Extract Country
+  let country = rawInfo.Country ?? rawInfo.country;
+  if (country && typeof country === 'object') {
+    country = country.Name || country.name || country.Code || country.code;
+  }
+  if (!country || country === 'null') {
+    const reg = rawInfo.Region ?? rawInfo.region;
+    if (reg && typeof reg === 'object') {
+      country = reg.Name || reg.name || reg.Code || reg.code;
+    }
+  }
+  if (!country || country === 'null') {
+    const regReg = rawInfo.RegisteredRegion ?? rawInfo.registeredRegion;
+    if (regReg && typeof regReg === 'object') {
+      country = regReg.Name || regReg.name || regReg.Code || regReg.code;
+    }
+  }
+
+  // Extract Region / Subdivisions
+  let region = rawInfo.Region ?? rawInfo.region;
+  if (typeof region === 'string') {
+    region = cleanRegion(region);
+  } else if (region && typeof region === 'object') {
+    const cityObj = rawInfo.City ?? rawInfo.city;
+    if (cityObj && typeof cityObj === 'object' && cityObj.Subdivisions && cityObj.Subdivisions !== 'null') {
+      region = String(cityObj.Subdivisions).trim();
+    } else if (cityObj && typeof cityObj === 'object' && cityObj.SubCode && cityObj.SubCode !== 'null') {
+      region = String(cityObj.SubCode).trim();
+    } else {
+      region = region.Code || region.code || region.Name || region.name;
+    }
+  }
+
+  // Extract City
+  let city = rawInfo.City ?? rawInfo.city;
+  if (city && typeof city === 'object') {
+    city = city.Name || city.name || '--';
+  }
+
+  // Extract ISP
+  const isp = rawInfo.ISP ?? rawInfo.isp ?? rawInfo.Organization ?? rawInfo.organization;
+
   const info: IpqaNormalizedReport['info'] = {
-    ip: rawInfo.IP ?? rawInfo.ip,
-    country: rawInfo.Country ?? rawInfo.country,
-    region: rawInfo.Region ?? rawInfo.region,
-    city: rawInfo.City ?? rawInfo.city,
+    ip: typeof rawIp === 'string' ? rawIp.trim() : rawIp,
+    country: typeof country === 'string' ? country.trim() : country,
+    region: typeof region === 'string' ? region.trim() : region,
+    city: typeof city === 'string' ? city.trim() : city,
     asn: rawInfo.ASN ?? rawInfo.asn,
-    isp: rawInfo.ISP ?? rawInfo.isp,
+    isp: typeof isp === 'string' ? isp.trim() : isp,
     organization: rawInfo.Organization ?? rawInfo.organization,
     type: rawInfo.Type ?? rawInfo.type,
     ...rawInfo,
@@ -118,6 +176,7 @@ export function normalizeRawIpqa(
   const extra: Record<string, unknown> = {};
   if (raw && typeof raw === 'object') {
     const knownKeys = new Set([
+      'Head', 'head',
       'Info', 'info',
       'Score', 'score', 'scores',
       'Type', 'type',

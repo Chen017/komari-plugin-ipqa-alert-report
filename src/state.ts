@@ -29,13 +29,15 @@ export function loadState(): PluginState {
   const filePath = getStateFilePath();
   try {
     if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      const parsed = JSON.parse(content);
-      if (parsed && typeof parsed === 'object') {
-        return {
-          ...INITIAL_STATE,
-          ...parsed,
-        };
+      const content = fs.readFileSync(filePath, 'utf-8').trim();
+      if (content) {
+        const parsed = JSON.parse(content);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            ...INITIAL_STATE,
+            ...parsed,
+          };
+        }
       }
     }
   } catch (err) {
@@ -45,32 +47,18 @@ export function loadState(): PluginState {
 }
 
 /**
- * Saves state atomically by writing to a temp file and renaming it.
+ * Saves state directly and safely.
  */
 export function saveState(state: PluginState): void {
   const dir = getStorageDir();
   const filePath = getStateFilePath();
-  const tempPath = path.join(dir, `state.json.tmp.${Date.now()}`);
 
   try {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(tempPath, JSON.stringify(state, null, 2), 'utf-8');
-    try {
-      fs.renameSync(tempPath, filePath);
-    } catch {
-      fs.copyFileSync(tempPath, filePath);
-      fs.unlinkSync(tempPath);
-    }
+    fs.writeFileSync(filePath, JSON.stringify(state, null, 2), 'utf-8');
   } catch (err) {
     console.error('[IPQA] Failed to save state.json', err);
-    try {
-      if (fs.existsSync(tempPath)) {
-        fs.unlinkSync(tempPath);
-      }
-    } catch {
-      // ignore
-    }
   }
 }

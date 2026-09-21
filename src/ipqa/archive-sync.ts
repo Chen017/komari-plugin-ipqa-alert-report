@@ -3,7 +3,7 @@ import type { ServerContext } from '../scheduler.ts';
 import { runRemoteTask } from '../remote.ts';
 import { buildManifestCommand, parseManifestOutput } from './archive-manifest.ts';
 import { buildBatchFetchCommand, parseBatchFetchOutput } from './archive-fetch.ts';
-import { normalizeRawIpqa } from './archive-normalize.ts';
+import { getReportRiskCategory, normalizeRawIpqa } from './archive-normalize.ts';
 import { pairDailyReports } from './archive-pair.ts';
 import { compareDailyReports } from './archive-diff.ts';
 import {
@@ -149,16 +149,56 @@ export async function syncFleetArchives(
     const v6Files = listCachedRawFilenames(node.uuid, 'v6');
     const hasArchives = v4Files.length > 0 || v6Files.length > 0;
 
-    let status: NodeIpqaStatus = 'ok';
-    if (error) {
-      status = hasArchives ? 'stale' : 'collection_error';
-    } else if (!hasArchives) {
-      status = 'no_archive';
-    }
-
     // Read latest paired report
     const { getLatestDailyReport } = await import('../storage/archive-store.ts');
     const latest = getLatestDailyReport(node.uuid);
+
+    let status: NodeIpqaStatus = 'ok';
+    if (!hasArchives) {
+      status = 'no_archive';
+    } else {
+      // Check staleness: only consider stale if older than 36 hours from now
+      const latestTime = latest ? Date.parse(latest.updatedAt || `${latest.date}T00:00:00Z`) : 0;
+      const isStale = Number.isFinite(latestTime) && latestTime > 0 && (Date.now() - latestTime > 36 * 3600 * 1000);
+      if (error && isStale) {
+        status = 'stale';
+      } else if (error && !latest) {
+        status = 'collection_error';
+      } else {
+        status = 'ok';
+      }
+    }
+
+    const buildProtocolSummary = (rep: any) => {
+      if (!rep) return undefined;
+      const scores = rep.scores ?? {};
+      const risk = getReportRiskCategory(rep);
+      const media: Record<string, any> = {};
+      const ai: Record<string, any> = {};
+      if (rep.media) {
+        for (const [s, data] of Object.entries(rep.media as Record<string, any>)) {
+          const status = data?.status;
+          const isUnlocked = typeof status === 'string' && (status.includes('解锁') || status.includes('Yes') || status.includes('仅自制'));
+          const item = { ...data, unlocked: isUnlocked };
+          const sLower = s.toLowerCase();
+          if (sLower.includes('chatgpt') || sLower.includes('claude') || sLower.includes('openai')) {
+            ai[s] = item;
+          } else {
+            media[s] = item;
+          }
+        }
+      }
+      return {
+        date: rep.date ?? null,
+        risk: {
+          category: risk.category,
+          source: risk.source,
+        },
+        scores,
+        media,
+        ai,
+      };
+    };
 
     nodeOverviews.push({
       uuid: node.uuid,
@@ -174,6 +214,8 @@ export async function syncFleetArchives(
       media_summary: latest?.summary.mediaSummary ?? {},
       ai_summary: latest?.summary.aiSummary ?? {},
       changes_today: latest?.changesFromPrevious?.length ?? 0,
+      v4: buildProtocolSummary(latest?.v4),
+      v6: buildProtocolSummary(latest?.v6),
     });
   }
 

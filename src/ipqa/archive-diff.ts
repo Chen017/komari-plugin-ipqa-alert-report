@@ -171,12 +171,15 @@ function compareSingleVersion(
   return changes;
 }
 
+const IGNORED_DIFF_PATH_REGEX = /(?:^|\.)(?:head|time|timestamp|date|archiveid|mtime|command|version|runtime|duration|uuid|client|created_at|finished_at)(?:$|\.)/i;
+
 function diffLeafFields(
   a: any,
   b: any,
   prefix: string,
   onDiff: (path: string, before: unknown, after: unknown) => void
 ): void {
+  if (IGNORED_DIFF_PATH_REGEX.test(prefix)) return;
   if (a === b) return;
   if (typeof a !== 'object' || a === null || typeof b !== 'object' || b === null) {
     onDiff(prefix, a, b);

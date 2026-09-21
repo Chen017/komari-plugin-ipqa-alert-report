@@ -93,6 +93,17 @@ export interface IpqaSemanticChange {
 
 export type NodeIpqaStatus = 'ok' | 'not_installed' | 'no_archive' | 'stale' | 'collection_error';
 
+export interface IpqaNodeProtocolSummary {
+  date?: string | null;
+  risk?: {
+    category: RiskCategory;
+    source: string;
+  };
+  scores: Record<string, string | number | boolean | null>;
+  media: Record<string, { status?: string; region?: string; unlocked?: boolean; [key: string]: unknown }>;
+  ai: Record<string, { status?: string; region?: string; unlocked?: boolean; [key: string]: unknown }>;
+}
+
 export interface IpqaNodeOverview {
   uuid: string;
   name: string;
@@ -107,6 +118,8 @@ export interface IpqaNodeOverview {
   media_summary: Record<string, { unlocked: boolean; region?: string }>;
   ai_summary: Record<string, { unlocked: boolean; region?: string }>;
   changes_today: number;
+  v4?: IpqaNodeProtocolSummary;
+  v6?: IpqaNodeProtocolSummary;
 }
 
 export interface IpqaFleetOverview {

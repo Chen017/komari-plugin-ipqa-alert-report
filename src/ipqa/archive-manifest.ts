@@ -7,8 +7,10 @@ export const ARCHIVE_FILENAME_REGEX = /^(\d{4}-\d{2}-\d{2})_\d{6}\.json$/;
  */
 export function buildManifestCommand(): string {
   return [
+    'IPQA_DIR="${IPQA_DIR:-$HOME/.ipqa}"',
+    '[ ! -d "$IPQA_DIR" ] && IPQA_DIR="/root/.ipqa"',
     'echo "__IPQA_MANIFEST_BEGIN__"',
-    'for f in "$HOME/.ipqa/data/v4"/*.json; do',
+    'for f in "$IPQA_DIR/data/v4"/*.json; do',
     '  if [ -f "$f" ]; then',
     '    fn=$(basename "$f")',
     '    sz=$(wc -c < "$f" 2>/dev/null || stat -c %s "$f" 2>/dev/null || echo 0)',
@@ -16,7 +18,7 @@ export function buildManifestCommand(): string {
     '    echo "__IPQA_ENTRY__|v4|$fn|$sz|$mt"',
     '  fi',
     'done',
-    'for f in "$HOME/.ipqa/data/v6"/*.json; do',
+    'for f in "$IPQA_DIR/data/v6"/*.json; do',
     '  if [ -f "$f" ]; then',
     '    fn=$(basename "$f")',
     '    sz=$(wc -c < "$f" 2>/dev/null || stat -c %s "$f" 2>/dev/null || echo 0)',
@@ -66,7 +68,15 @@ export function parseManifestOutput(stdout: string): ManifestEntry[] {
         const match = ARCHIVE_FILENAME_REGEX.exec(filename);
         if (!match) continue; // Must strictly match YYYY-MM-DD_HHMMSS.json
 
-        const date = match[1]!;
+        let date = match[1]!;
+        if (Number.isFinite(mtime) && mtime > 0) {
+          const bjMs = mtime * 1000 + 8 * 3600 * 1000;
+          const bjDate = new Date(bjMs);
+          const y = bjDate.getUTCFullYear();
+          const m = String(bjDate.getUTCMonth() + 1).padStart(2, '0');
+          const d = String(bjDate.getUTCDate()).padStart(2, '0');
+          date = `${y}-${m}-${d}`;
+        }
 
         entries.push({
           ipVersion: ipVer,

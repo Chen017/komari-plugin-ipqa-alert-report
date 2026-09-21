@@ -21,7 +21,7 @@ test('api routes: registration and read-only cache endpoints', async () => {
   assert.ok(routes.has('GET:/api/plugin/ipqa-alert-report/v1/capabilities'));
   assert.ok(routes.has('GET:/api/plugin/ipqa-alert-report/v1/overview'));
   assert.ok(routes.has('GET:/api/plugin/ipqa-alert-report/v1/nodes'));
-  assert.ok(routes.has('GET:/api/plugin/ipqa-alert-report/v1/nodes/*'));
+  assert.ok(routes.has('GET:/api/plugin/ipqa-alert-report/v1/nodes/*action') || routes.has('GET:/api/plugin/ipqa-alert-report/v1/nodes/*'));
 
   function createMockRes() {
     return {
@@ -120,7 +120,7 @@ test('api routes: registration and read-only cache endpoints', async () => {
 
     const req = { url: '/api/plugin/ipqa-alert-report/v1/nodes/node-tokyo/latest' };
     const res = createMockRes();
-    const handler = routes.get('GET:/api/plugin/ipqa-alert-report/v1/nodes/*');
+    const handler = routes.get('GET:/api/plugin/ipqa-alert-report/v1/nodes/*action') || routes.get('GET:/api/plugin/ipqa-alert-report/v1/nodes/*');
     await handler(req, res);
     assert.strictEqual(res.statusCode, 200);
     const data = JSON.parse(res.body);
@@ -132,7 +132,7 @@ test('api routes: registration and read-only cache endpoints', async () => {
   {
     const req = { url: '/api/plugin/ipqa-alert-report/v1/nodes/node-tokyo/archives/2026-09-21' };
     const res = createMockRes();
-    const handler = routes.get('GET:/api/plugin/ipqa-alert-report/v1/nodes/*');
+    const handler = routes.get('GET:/api/plugin/ipqa-alert-report/v1/nodes/*action') || routes.get('GET:/api/plugin/ipqa-alert-report/v1/nodes/*');
     await handler(req, res);
     assert.strictEqual(res.statusCode, 200);
     const data = JSON.parse(res.body);
@@ -143,7 +143,7 @@ test('api routes: registration and read-only cache endpoints', async () => {
   {
     const req = { url: '/api/plugin/ipqa-alert-report/v1/nodes/non-existent/latest' };
     const res = createMockRes();
-    const handler = routes.get('GET:/api/plugin/ipqa-alert-report/v1/nodes/*');
+    const handler = routes.get('GET:/api/plugin/ipqa-alert-report/v1/nodes/*action') || routes.get('GET:/api/plugin/ipqa-alert-report/v1/nodes/*');
     await handler(req, res);
     assert.strictEqual(res.statusCode, 404);
   }

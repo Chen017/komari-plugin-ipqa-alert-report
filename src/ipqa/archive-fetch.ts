@@ -17,12 +17,16 @@ export interface FetchedArchive {
  * Uses unambiguous base64 framing per file.
  */
 export function buildBatchFetchCommand(targets: BatchFetchTarget[]): string {
-  const lines: string[] = ['echo "__IPQA_BATCH_BEGIN__"'];
+  const lines: string[] = [
+    'IPQA_DIR="${IPQA_DIR:-$HOME/.ipqa}"',
+    '[ ! -d "$IPQA_DIR" ] && IPQA_DIR="/root/.ipqa"',
+    'echo "__IPQA_BATCH_BEGIN__"',
+  ];
 
   for (const target of targets) {
     if (!ARCHIVE_FILENAME_REGEX.test(target.filename)) continue;
     const ipVer = target.ipVersion === 'v6' ? 'v6' : 'v4';
-    const filePath = `"$HOME/.ipqa/data/${ipVer}/${target.filename}"`;
+    const filePath = `"$IPQA_DIR/data/${ipVer}/${target.filename}"`;
 
     lines.push(`if [ -f ${filePath} ]; then`);
     lines.push(`  echo "__IPQA_FILE_BEGIN__|${ipVer}|${target.filename}"`);
