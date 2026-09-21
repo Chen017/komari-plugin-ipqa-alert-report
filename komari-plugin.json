@@ -11,7 +11,7 @@
     "zh_CN": "对于安装了开源项目 IP-Quality-Archive 的 VPS，通过 Komari 通知渠道发送 IP 质量的告警通知。",
     "en": "Sends IP quality alert notifications via Komari notification channels for VPS nodes with the open-source project IP-Quality-Archive installed."
   },
-  "version": "0.1.0",
+  "version": "0.2.0",
   "komari": ">=1.4.3",
   "entry": "script.js",
   "icon": "assets/icon.svg",
