@@ -226,6 +226,33 @@ export async function load(): Promise<void> {
 
   registerScheduler(serverInstance);
 
+  // Register IPQA Versioned Public Read API (Section 25)
+  try {
+    const { registerApiRoutes } = await import('./api/routes.ts');
+    registerApiRoutes(serverInstance);
+  } catch (apiErr) {
+    console.warn('[IPQA] Failed to register API routes:', apiErr);
+  }
+
+  // Initial history backfill in background after 60s (Section 20)
+  setTimeout(async () => {
+    try {
+      const { loadConfig } = await import('./config.ts');
+      const { fetchAllNodes, resolveTargetNodes } = await import('./nodes.ts');
+      const { syncFleetArchives } = await import('./ipqa/archive-sync.ts');
+
+      const config = await loadConfig(serverInstance);
+      const allNodes = await fetchAllNodes(serverInstance);
+      const targets = resolveTargetNodes(config, allNodes);
+      if (targets.length > 0) {
+        console.log('[IPQA] Triggering initial background archive backfill...');
+        await syncFleetArchives(serverInstance, targets);
+      }
+    } catch (backfillErr) {
+      console.warn('[IPQA] Initial background backfill encountered error:', backfillErr);
+    }
+  }, 60_000);
+
   console.log('[IPQA] IPQA Alert Report plugin loaded successfully.');
 }
 
