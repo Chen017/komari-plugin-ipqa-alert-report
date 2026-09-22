@@ -3,15 +3,15 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Komari Version](https://img.shields.io/badge/Komari-%3E%3D1.4.3-blue)](https://github.com/komari-monitor)
 [![Compatible With](https://img.shields.io/badge/IPQA-IP--Quality--Archive-green)](https://github.com/Chen017/IP-Quality-Archive)
-[![Theme Integration](https://img.shields.io/badge/Theme%20Integration-Komari%20Emerald-emerald)](https://github.com/Chen017/komari-theme-emerald)
+[![Theme Integration](https://img.shields.io/badge/Theme%20Integration-Komari%20Emerald%20Insights-emerald)](https://github.com/Chen017/komari-theme-emerald-insights)
 [![Komari Emerald Ecosystem](https://img.shields.io/badge/Komari%20Emerald-Ecosystem-10b981)](https://github.com/Chen017/komari-emerald-suite)
 
 > [!IMPORTANT]
 > 本插件需要目标 VPS 已安装 [IP-Quality-Archive](https://github.com/Chen017/IP-Quality-Archive)。
 >
-> 推荐搭配 [Komari Emerald](https://github.com/Chen017/komari-theme-emerald) 使用，可在 Resource Insights 中直接查看 IPQA 概览、风险矩阵、流媒体解锁矩阵与节点历史档案。
+> 推荐搭配 [Komari Emerald Insights](https://github.com/Chen017/komari-theme-emerald-insights) 使用，可在 Resource Insights 中直接查看 IPQA 概览、风险矩阵、流媒体解锁矩阵与节点历史档案。
 
-本插件为 Komari 提供 IP-Quality-Archive 深度集成：一方面作为 **数据提供方 (Data Provider)**，增量同步 VPS 端的 IPQA 历史归档，提供版本化只读 HTTP API 供前端主题（如 Komari Emerald）渲染集群质量概览与历史档案；另一方面支持语义变更追踪与定时聚合告警推送。
+本插件为 Komari 提供 IP-Quality-Archive 深度集成：一方面作为 **数据提供方 (Data Provider)**，增量同步 VPS 端的 IPQA 历史归档，提供版本化只读 HTTP API 供前端主题（如 Komari Emerald Insights）渲染集群质量概览与历史档案；另一方面支持语义变更追踪与定时聚合告警推送。
 
 ---
 
@@ -56,7 +56,7 @@
 
 ## 前端主题适配
 
-本插件设计与 **[Komari Emerald](https://github.com/Chen017/komari-theme-emerald)** (版本 `>= 1.0.12`) 深度协同：
+本插件设计与 **[Komari Emerald Insights](https://github.com/Chen017/komari-theme-emerald-insights)** 深度协同：
 - **资源概览页**：自动读取 `/overview` 呈现集群 IPQA 统计卡片、节点网格、风险矩阵与流媒体解锁矩阵。
 - **节点详情快照**：在常规节点监控页展示当前节点 IP 质量快照。
 - **完整节点档案** (`/ip-quality/:uuid`)：支持按日历和归档日期逐日查阅历史测评、各引擎评分、风险因子树与原始 JSON。
@@ -216,12 +216,12 @@ npm run build
                │                         │
                └────────────┬────────────┘
                             ▼
-                     Komari Emerald
+                Komari Emerald Insights
                     Resource Insights
 ```
 
 - [Komari Emerald Suite](https://github.com/Chen017/komari-emerald-suite)：生态聚合展示主页
-- [Komari Emerald](https://github.com/Chen017/komari-theme-emerald)：现代化前端监控主题
+- [Komari Emerald Insights](https://github.com/Chen017/komari-theme-emerald-insights)：现代化前端监控主题
 - [Komari Plugin: Availability History](https://github.com/Chen017/komari-plugin-availability-history)：节点在线率历史账本插件
 - [IP-Quality-Archive](https://github.com/Chen017/IP-Quality-Archive)：节点端 IP 质量采集工具
 
@@ -229,7 +229,7 @@ npm run build
 
 ## Related Projects
 
-- [Komari Emerald](https://github.com/Chen017/komari-theme-emerald)
+- [Komari Emerald Insights](https://github.com/Chen017/komari-theme-emerald-insights)
 - [Availability History](https://github.com/Chen017/komari-plugin-availability-history)
 - [IP-Quality-Archive](https://github.com/Chen017/IP-Quality-Archive)
 - [Komari](https://github.com/komari-monitor/komari)
