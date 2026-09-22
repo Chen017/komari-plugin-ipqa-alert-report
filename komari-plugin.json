@@ -75,6 +75,17 @@
         "type": "textbox"
       },
       {
+        "key": "sync_archives",
+        "name": {
+          "zh-CN": "同步 IPQA 历史归档",
+          "zh_CN": "同步 IPQA 历史归档",
+          "en": "Sync IPQA archives"
+        },
+        "type": "switch",
+        "default": true,
+        "help": "自动将节点上的 IP-Quality-Archive 历史归档同步到 Komari，供 Emerald Insights 展示 IP 质量概览和历史数据。"
+      },
+      {
         "key": "min_severity",
         "name": {
           "zh-CN": "最低通知等级",

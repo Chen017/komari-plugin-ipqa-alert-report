@@ -120,6 +120,7 @@ npm run build
 | **启用 IPQA 告警报告** | `enabled` | `true` | 控制插件的总运行开关。 |
 | **为全部节点启用** | `all_nodes` | `false` | 开启后忽略节点勾选，自动采集所有已接入 Komari 的节点。建议所有 VPS 均安装了 IPQA 时开启。 |
 | **选择节点** | `nodes` | `[]` | 在未勾选全部节点时，手动选择安装了 IPQA 的节点。 |
+| **同步 IPQA 历史归档** | `sync_archives` | `true` | 开启后自动将节点上的 IP-Quality-Archive 历史归档同步到 Komari，供 Emerald Insights 展示 IP 质量概览、历史和变动。 |
 | **最低通知等级** | `min_severity` | `INFO` | 可选 `INFO`、`WARNING`、`CRITICAL`。设置为 `WARNING` 时将忽略 `INFO` 级轻微告警。 |
 | **忽略首次建档记录** | `ignore_initial_archive` | `true` | 自动忽略 IPQA 初次部署时的「首次完成数据存档监测」告警。 |
 | **采集失败时通知** | `notify_collection_failures` | `true` | 当节点离线、Agent 超时或未安装 IPQA 找不到日志时，是否在通知中提醒。 |

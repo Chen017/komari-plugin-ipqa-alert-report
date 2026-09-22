@@ -210,7 +210,7 @@ __IPQA_BATCH_END__
       }
       return {};
     },
-    getConfig: () => ({ enabled: true, sync_archives: true, all_nodes: true }),
+    getConfig: () => ({ enabled: true, all_nodes: true }),
   };
 
   // Run sync

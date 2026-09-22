@@ -277,6 +277,11 @@ export async function load(): Promise<void> {
 
   registerScheduler(serverInstance);
 
+  const initialConfig = await loadConfig(serverInstance);
+  console.log(
+    `[IPQA] Archive sync ${initialConfig.sync_archives ? 'enabled: true' : 'disabled by configuration'}`
+  );
+
   // Register IPQA Versioned Public Read API (Section 25)
   try {
     registerApiRoutes(serverInstance);

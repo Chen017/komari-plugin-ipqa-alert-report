@@ -8,7 +8,7 @@ export const DEFAULT_CONFIG: PluginConfig = {
   ignore_initial_archive: true,
   notify_collection_failures: true,
   template: '',
-  sync_archives: false,
+  sync_archives: true,
 };
 
 /**
