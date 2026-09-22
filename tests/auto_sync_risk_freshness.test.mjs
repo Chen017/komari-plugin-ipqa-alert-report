@@ -245,4 +245,43 @@ __IPQA_BATCH_END__
   // Retry test (Section 30): running sync again when already current skips remote execution
   const secondSync = await syncIpqaArchives(mockServer, { reason: 'daily', now });
   assert.strictEqual(secondSync.nodes[0].status, 'already_current');
+
+  // Verify classifiedScores and semantic transitions
+  const normalized = normalizeRawIpqa({
+    scores: { ipapi: '18.16%', IP2LOCATION: '3', IPQS: 'null' },
+  }, 'v4', '2026-09-22_040000.json');
+  assert.ok(normalized.classifiedScores);
+  assert.strictEqual(normalized.classifiedScores.ipapi.categoryKey, 'Critical');
+  assert.strictEqual(normalized.classifiedScores.ipapi.categoryLabel, '极高风险');
+  assert.strictEqual(normalized.classifiedScores.ipapi.rank, 4);
+  assert.strictEqual(normalized.classifiedScores.ipapi.alertSeverity, 'CRITICAL');
+  assert.strictEqual(normalized.classifiedScores.IPQS.available, false);
+  assert.strictEqual(normalized.classifiedScores.IPQS.categoryKey, 'Unknown');
+
+  // Semantic diff transition fields
+  const diffs = compareDailyReports(
+    {
+      schemaVersion: 1,
+      nodeUuid: 'test-node',
+      date: '2026-09-21',
+      updatedAt: '',
+      v4: normalizeRawIpqa({ scores: { ipapi: '2.73%' } }, 'v4', '2026-09-21_040000.json'),
+      v6: null,
+      summary: { hasV4: true, hasV6: false, highestRiskCategory: 'Medium', highestRiskSource: 'ipapi', mediaSummary: {}, aiSummary: {} },
+    },
+    {
+      schemaVersion: 1,
+      nodeUuid: 'test-node',
+      date: '2026-09-22',
+      updatedAt: '',
+      v4: normalized,
+      v6: null,
+      summary: { hasV4: true, hasV6: false, highestRiskCategory: 'Critical', highestRiskSource: 'ipapi', mediaSummary: {}, aiSummary: {} },
+    }
+  );
+  const ipapiDiff = diffs.find(d => d.field === 'scores.ipapi');
+  assert.ok(ipapiDiff);
+  assert.strictEqual(ipapiDiff.beforeCategory, '较高风险');
+  assert.strictEqual(ipapiDiff.afterCategory, '极高风险');
+  assert.strictEqual(ipapiDiff.severity, 'CRITICAL');
 });

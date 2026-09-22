@@ -72,6 +72,10 @@ function compareSingleVersion(
           field: `scores.${sk}`,
           before: b,
           after: a,
+          beforeCategory: transition.before.badge,
+          afterCategory: transition.after.badge,
+          beforeRank: transition.before.rank,
+          afterRank: transition.after.rank,
           description: transition.description,
         });
       }

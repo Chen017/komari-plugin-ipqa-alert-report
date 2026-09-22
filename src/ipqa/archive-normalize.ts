@@ -1,10 +1,12 @@
 import type {
+  ClassifiedRiskScore,
   IpqaNormalizedReport,
   IpVersion,
   NormalizedIpVersion,
   RiskCategory,
 } from './types.ts';
 import { ARCHIVE_FILENAME_REGEX } from './archive-manifest.ts';
+import { classifyScore, getHighestRisk, toClassifiedRiskScore } from './risk.ts';
 
 export function toBeijingDateString(dateObj: Date): string {
   const bjMs = dateObj.getTime() + 8 * 3600 * 1000;
@@ -124,12 +126,14 @@ export function normalizeRawIpqa(
 
   // 2. Scores
   const scores: Record<string, string | number | boolean | null> = {};
+  const classifiedScores: Record<string, ClassifiedRiskScore> = {};
   for (const [key, val] of Object.entries(rawScore)) {
     if (val === null || typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
       scores[key] = val;
     } else {
       scores[key] = String(val);
     }
+    classifiedScores[key] = toClassifiedRiskScore(classifyScore(key, scores[key]));
   }
 
   // 3. Type
@@ -203,6 +207,7 @@ export function normalizeRawIpqa(
     timestamp,
     info,
     scores,
+    classifiedScores,
     type: typeObj,
     factors,
     media,
@@ -210,8 +215,6 @@ export function normalizeRawIpqa(
     extra,
   };
 }
-
-import { getHighestRisk } from './risk.ts';
 
 /**
  * Assesses risk category from a normalized report using unified risk classification.

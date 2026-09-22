@@ -1,4 +1,4 @@
-import type { RiskCategory } from './types.ts';
+import type { ClassifiedRiskScore, RiskCategory } from './types.ts';
 
 export interface ClassifiedScore {
   provider: string;
@@ -8,6 +8,39 @@ export interface ClassifiedScore {
   category: RiskCategory;
   rank: number; // -1: Unknown, 0: Very Low, 1: Low, 2: Medium/Elevated, 3: High, 4: Critical
   badge: string; // e.g. "极低风险", "低风险", "中风险", "较高风险", "可疑IP", "高风险", "存在风险", "极高风险", "建议封禁"
+}
+
+export function toClassifiedRiskScore(score: ClassifiedScore): ClassifiedRiskScore {
+  let alertSeverity: 'INFO' | 'WARNING' | 'CRITICAL' | null = null;
+  if (score.rank >= 4) {
+    alertSeverity = 'CRITICAL';
+  } else if (score.rank === 3) {
+    alertSeverity = 'CRITICAL';
+  } else if (score.rank === 2) {
+    alertSeverity = 'WARNING';
+  } else if (score.rank >= 0) {
+    alertSeverity = 'INFO';
+  }
+
+  const unit: ClassifiedRiskScore['unit'] = score.unit === 'percent'
+    ? 'percent'
+    : score.unit === 'score'
+      ? 'score'
+      : score.provider.toLowerCase() === 'ipapi'
+        ? 'percent'
+        : 'score';
+
+  return {
+    provider: score.provider,
+    rawValue: score.rawValue,
+    numericValue: score.numericValue,
+    unit,
+    available: score.rank >= 0,
+    categoryKey: score.category,
+    categoryLabel: score.badge,
+    rank: score.rank >= 0 ? score.rank : null,
+    alertSeverity,
+  };
 }
 
 export interface ScoreTransitionResult {
