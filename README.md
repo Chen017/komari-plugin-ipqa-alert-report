@@ -3,18 +3,15 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Komari Version](https://img.shields.io/badge/Komari-%3E%3D1.4.3-blue)](https://github.com/komari-monitor)
 [![Compatible With](https://img.shields.io/badge/IPQA-IP--Quality--Archive-green)](https://github.com/Chen017/IP-Quality-Archive)
-[![Theme Support](https://img.shields.io/badge/Theme-Komari%20Emerald%20%3E%3D1.0.12-emerald)](https://github.com/Chen017/komari-theme-emerald)
+[![Theme Integration](https://img.shields.io/badge/Theme%20Integration-Komari%20Emerald-emerald)](https://github.com/Chen017/komari-theme-emerald)
+[![Komari Emerald Ecosystem](https://img.shields.io/badge/Komari%20Emerald-Ecosystem-10b981)](https://github.com/Chen017/komari-emerald-suite)
 
-> [!CAUTION]
-> <span style="color: #dc2626; font-weight: 700; font-size: 1.1em;">⚠️ 重要提示：本插件仅适用于已经安装了开源项目 <a href="https://github.com/Chen017/IP-Quality-Archive" target="_blank">IP-Quality-Archive</a> 的 VPS！若未安装，请先前往安装。</span>  
-> **IPQA 项目链接**：[https://github.com/Chen017/IP-Quality-Archive](https://github.com/Chen017/IP-Quality-Archive)  
-> **插件效果预览**：[https://github.com/Chen017/komari-plugin-ipqa-alert-report](https://github.com/Chen017/komari-plugin-ipqa-alert-report)  
+> [!IMPORTANT]
+> 本插件需要目标 VPS 已安装 [IP-Quality-Archive](https://github.com/Chen017/IP-Quality-Archive)。
 >
-> <span style="color: #dc2626; font-weight: 700;">⚠️ IMPORTANT: This plugin is ONLY for VPS nodes with <a href="https://github.com/Chen017/IP-Quality-Archive" target="_blank">IP-Quality-Archive</a> installed! Please install it first if not installed.</span>  
-> **IPQA Repository**: [https://github.com/Chen017/IP-Quality-Archive](https://github.com/Chen017/IP-Quality-Archive)  
-> **Plugin Preview**: [https://github.com/Chen017/komari-plugin-ipqa-alert-report](https://github.com/Chen017/komari-plugin-ipqa-alert-report)
+> 推荐搭配 [Komari Emerald](https://github.com/Chen017/komari-theme-emerald) 使用，可在 Resource Insights 中直接查看 IPQA 概览、风险矩阵、流媒体解锁矩阵与节点历史档案。
 
-本插件为 Komari 提供原生的 IPQA (IP-Quality-Archive) 深度集成支持：一方面作为 **数据提供方 (Data Provider)**，增量同步 VPS 端的 IPQA 历史归档，提供版本化只读 HTTP API 供前端主题渲染集群质量概览与历史档案；另一方面保留 **日常告警聚合推送 (Daily Alert Report)** 功能，每日定时向 Telegram 等渠道发送聚合告警通知。
+本插件为 Komari 提供 IP-Quality-Archive 深度集成：一方面作为 **数据提供方 (Data Provider)**，增量同步 VPS 端的 IPQA 历史归档，提供版本化只读 HTTP API 供前端主题（如 Komari Emerald）渲染集群质量概览与历史档案；另一方面支持语义变更追踪与定时聚合告警推送。
 
 ---
 
@@ -36,7 +33,7 @@
 
 ## 工作流程
 
-```
+```text
 [各 VPS 节点] 04:00 自动执行 IPQA 检测
        │
        ▼ (结果记录至 ~/.ipqa/data/alerts.log 及 data/{v4,v6}/*.json)
@@ -80,7 +77,6 @@
 | `/nodes/:uuid/changes` | `GET` | 获取指定节点的历史语义变更时间轴 |
 | `/nodes/:uuid/history/scores` | `GET` | 获取指定节点各评分引擎的历史趋势数据 |
 | `/nodes/:uuid/history/media` | `GET` | 获取指定节点流媒体与 AI 解锁的历史趋势数据 |
-
 
 ---
 
@@ -201,10 +197,42 @@ npm run build
 
 ---
 
-## 关联项目
+## Komari Emerald Ecosystem
 
-- [IP-Quality-Archive (IPQA)](https://github.com/Chen017/IP-Quality-Archive)：基于 IPQuality 的 Linux IP 质量定时归档与历史监测工具。
-- [Komari](https://github.com/komari-monitor)：轻量、现代化的高颜值服务器监控探针系统。
+本插件是 **Komari Emerald Ecosystem** 的核心组件之一：
+
+```text
+                         Komari
+                            │
+               ┌────────────┴────────────┐
+               │                         │
+               ▼                         ▼
+   Availability History          IPQA Alert Report
+   WebSocket event ledger        Archive / API / Alerts
+                                         │ (★ 本项目)
+                                         ▼
+                               IP-Quality-Archive
+                               on monitored VPS
+               │                         │
+               └────────────┬────────────┘
+                            ▼
+                     Komari Emerald
+                    Resource Insights
+```
+
+- [Komari Emerald Suite](https://github.com/Chen017/komari-emerald-suite)：生态聚合展示主页
+- [Komari Emerald](https://github.com/Chen017/komari-theme-emerald)：现代化前端监控主题
+- [Komari Plugin: Availability History](https://github.com/Chen017/komari-plugin-availability-history)：节点在线率历史账本插件
+- [IP-Quality-Archive](https://github.com/Chen017/IP-Quality-Archive)：节点端 IP 质量采集工具
+
+---
+
+## Related Projects
+
+- [Komari Emerald](https://github.com/Chen017/komari-theme-emerald)
+- [Availability History](https://github.com/Chen017/komari-plugin-availability-history)
+- [IP-Quality-Archive](https://github.com/Chen017/IP-Quality-Archive)
+- [Komari](https://github.com/komari-monitor/komari)
 
 ---
 
