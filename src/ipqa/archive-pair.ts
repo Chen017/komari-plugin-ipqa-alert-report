@@ -88,15 +88,21 @@ export function pairDailyReports(
     const riskV4 = getReportRiskCategory(v4);
     const riskV6 = getReportRiskCategory(v6);
 
-    let highestRiskCategory: RiskCategory = 'Low';
+    let highestRiskCategory: RiskCategory = 'Unknown';
     let highestRiskSource = 'None';
 
-    if (RISK_RANK[riskV4.category] >= RISK_RANK[riskV6.category]) {
+    const rank4 = RISK_RANK[riskV4.category] ?? 0;
+    const rank6 = RISK_RANK[riskV6.category] ?? 0;
+
+    if (rank4 === 0 && rank6 === 0) {
+      highestRiskCategory = 'Unknown';
+      highestRiskSource = 'None';
+    } else if (rank4 >= rank6) {
       highestRiskCategory = riskV4.category;
-      highestRiskSource = riskV4.source !== 'None' ? `${riskV4.source} (v4)` : riskV4.source;
+      highestRiskSource = riskV4.source !== 'None' ? `${riskV4.source}` : riskV4.source;
     } else {
       highestRiskCategory = riskV6.category;
-      highestRiskSource = riskV6.source !== 'None' ? `${riskV6.source} (v6)` : riskV6.source;
+      highestRiskSource = riskV6.source !== 'None' ? `${riskV6.source}` : riskV6.source;
     }
 
     const { mediaSummary, aiSummary } = extractMediaAndAiSummary(v4, v6);

@@ -57,6 +57,22 @@ export interface DailyReport {
   failedNodes: NodeCollectionResult[];
 }
 
+export interface NodeSyncState {
+  status: 'current' | 'failed' | 'not_installed' | 'no_archive';
+  latest_date: string | null;
+  attempts: number;
+  last_attempt_at: string;
+  last_success_at?: string;
+  error?: string | null;
+}
+
+export interface ArchiveSyncState {
+  beijing_date: string;
+  last_attempt_at: string;
+  last_success_at?: string;
+  nodes: Record<string, NodeSyncState>;
+}
+
 export interface PluginState {
   schema_version: number;
   last_run_beijing_date: string;
@@ -70,6 +86,7 @@ export interface PluginState {
   };
   attempt_date?: string;
   attempt_count?: number;
+  archive_sync?: ArchiveSyncState;
 }
 
 export interface TaskExecResult {

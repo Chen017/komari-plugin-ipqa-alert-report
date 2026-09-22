@@ -6,6 +6,7 @@ import type {
   IpqaSemanticChange,
   NormalizedIpVersion,
 } from './types.ts';
+import { compareScoreTransition } from './risk.ts';
 
 function compareSingleVersion(
   prev: IpqaNormalizedReport | null,
@@ -60,20 +61,20 @@ function compareSingleVersion(
     const b = prev.scores[sk];
     const a = curr.scores[sk];
     if (b !== undefined && a !== undefined && b !== a) {
-      const numB = Number(b);
-      const numA = Number(a);
-      const isIncrease = Number.isFinite(numB) && Number.isFinite(numA) ? numA > numB : true;
-      changes.push({
-        date,
-        nodeUuid,
-        ipVersion: ipVer,
-        category: 'score',
-        severity: isIncrease ? 'WARNING' : 'INFO',
-        field: `scores.${sk}`,
-        before: b,
-        after: a,
-        description: `${sk} 风险评分变动: ${b} -> ${a}`,
-      });
+      const transition = compareScoreTransition(sk, b, a);
+      if (transition.changed) {
+        changes.push({
+          date,
+          nodeUuid,
+          ipVersion: ipVer,
+          category: 'score',
+          severity: transition.severity,
+          field: `scores.${sk}`,
+          before: b,
+          after: a,
+          description: transition.description,
+        });
+      }
     }
   }
 

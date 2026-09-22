@@ -211,8 +211,10 @@ export function normalizeRawIpqa(
   };
 }
 
+import { getHighestRisk } from './risk.ts';
+
 /**
- * Assesses risk category from a normalized report.
+ * Assesses risk category from a normalized report using unified risk classification.
  */
 export function getReportRiskCategory(report: IpqaNormalizedReport | null): {
   category: RiskCategory;
@@ -221,46 +223,9 @@ export function getReportRiskCategory(report: IpqaNormalizedReport | null): {
   if (!report) {
     return { category: 'Unknown', source: 'None' };
   }
-
-  const scores = report.scores;
-  let highestCategory: RiskCategory = 'Low';
-  let highestSource = 'None';
-
-  // 1. IPQS (0-100, >= 85 Critical, >= 75 High, >= 50 Medium)
-  if (scores.IPQS !== undefined && scores.IPQS !== null) {
-    const num = Number(scores.IPQS);
-    if (Number.isFinite(num)) {
-      if (num >= 85) return { category: 'Critical', source: 'IPQS' };
-      if (num >= 75) { highestCategory = 'High'; highestSource = 'IPQS'; }
-      else if (num >= 50 && highestCategory === 'Low') { highestCategory = 'Medium'; highestSource = 'IPQS'; }
-    }
-  }
-
-  // 2. SCAMALYTICS (0-100, >= 70 High, >= 25 Medium)
-  if (scores.SCAMALYTICS !== undefined && scores.SCAMALYTICS !== null) {
-    const num = Number(scores.SCAMALYTICS);
-    if (Number.isFinite(num)) {
-      if (num >= 75) { highestCategory = 'High'; highestSource = 'SCAMALYTICS'; }
-      else if (num >= 25 && highestCategory === 'Low') { highestCategory = 'Medium'; highestSource = 'SCAMALYTICS'; }
-    }
-  }
-
-  // 3. AbuseIPDB
-  if (scores.AbuseIPDB !== undefined && scores.AbuseIPDB !== null) {
-    const num = Number(scores.AbuseIPDB);
-    if (Number.isFinite(num)) {
-      if (num >= 50) { highestCategory = 'High'; highestSource = 'AbuseIPDB'; }
-      else if (num >= 20 && highestCategory === 'Low') { highestCategory = 'Medium'; highestSource = 'AbuseIPDB'; }
-    }
-  }
-
-  // 4. IP2LOCATION
-  if (scores.IP2LOCATION) {
-    const str = String(scores.IP2LOCATION).toUpperCase();
-    if (str.includes('VERY HIGH')) return { category: 'Critical', source: 'IP2LOCATION' };
-    if (str.includes('HIGH')) { highestCategory = 'High'; highestSource = 'IP2LOCATION'; }
-    else if (str.includes('MEDIUM') && highestCategory === 'Low') { highestCategory = 'Medium'; highestSource = 'IP2LOCATION'; }
-  }
-
-  return { category: highestCategory, source: highestSource };
+  const result = getHighestRisk(report.scores);
+  return {
+    category: result.category,
+    source: result.source,
+  };
 }

@@ -215,6 +215,44 @@ export async function load(): Promise<void> {
     // @ts-expect-error server.route
     serverInstance.route('POST', '/api/ipqa-alert-report/test', testRouteHandler);
     console.log('[IPQA] Test endpoints registered at /api/plugin/ipqa-alert-report/test');
+
+    const syncRouteHandler = async (req: any, res: any) => {
+      try {
+        if (req && req.context && req.context.principal) {
+          const p = req.context.principal;
+          const isAdmin =
+            (p.type === 'user' && (p.roles?.includes('admin') || p.role === 'admin')) ||
+            p.is_api_key;
+          if (!isAdmin && p.type !== 'anonymous') {
+            res.statusCode = 403;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ success: false, error: 'Forbidden: Admin access required' }));
+            return;
+          }
+        }
+
+        const { syncIpqaArchives } = await import('./ipqa/archive-sync.ts');
+        const result = await syncIpqaArchives(serverInstance, { reason: 'manual' });
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({ success: true, result }));
+      } catch (err: any) {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(
+          JSON.stringify({
+            success: false,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        );
+      }
+    };
+
+    // @ts-expect-error server.route
+    serverInstance.route('POST', '/api/plugin/ipqa-alert-report/sync', syncRouteHandler);
+    // @ts-expect-error server.route
+    serverInstance.route('POST', '/api/ipqa-alert-report/sync', syncRouteHandler);
+    console.log('[IPQA] Admin sync endpoints registered at /api/plugin/ipqa-alert-report/sync');
   }
 
   // Register manual test RPC
@@ -225,6 +263,16 @@ export async function load(): Promise<void> {
       return await runTestReport(serverInstance, params || {});
     });
     console.log('[IPQA] Test RPC registered: plugin:ipqaTestRun');
+
+    // @ts-expect-error server.registerRPC
+    serverInstance.registerRPC('plugin:ipqaSyncNow', async (params: any) => {
+      const { syncIpqaArchives } = await import('./ipqa/archive-sync.ts');
+      return await syncIpqaArchives(serverInstance, {
+        reason: 'manual',
+        selectedNodeUuids: params?.selectedNodeUuids,
+      });
+    });
+    console.log('[IPQA] Sync RPC registered: plugin:ipqaSyncNow');
   }
 
   registerScheduler(serverInstance);
@@ -236,20 +284,19 @@ export async function load(): Promise<void> {
     console.warn('[IPQA] Failed to register API routes:', apiErr);
   }
 
-  // Initial history backfill in background after 60s (Section 20)
+  // Initial history backfill in background after 30s (Section 4 & 20)
   setTimeout(async () => {
     try {
       const config = await loadConfig(serverInstance);
-      const allNodes = await fetchAllNodes(serverInstance);
-      const targets = resolveTargetNodes(config, allNodes);
-      if (targets.length > 0) {
+      if (config.enabled && config.sync_archives) {
         console.log('[IPQA] Triggering initial background archive backfill...');
-        await syncFleetArchives(serverInstance, targets);
+        const { syncIpqaArchives } = await import('./ipqa/archive-sync.ts');
+        await syncIpqaArchives(serverInstance, { reason: 'startup' });
       }
     } catch (backfillErr) {
       console.warn('[IPQA] Initial background backfill encountered error:', backfillErr);
     }
-  }, 60_000);
+  }, 30_000);
 
   console.log('[IPQA] IPQA Alert Report plugin loaded successfully.');
 }

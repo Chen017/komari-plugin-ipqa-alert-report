@@ -140,13 +140,18 @@ export function normalizeTaskResults(rawResults: unknown): Map<string, TaskExecR
     }
   };
 
-  if (Array.isArray(rawResults)) {
-    for (const item of rawResults) {
+  let items = rawResults;
+  if (rawResults && typeof rawResults === 'object' && Array.isArray((rawResults as any).results)) {
+    items = (rawResults as any).results;
+  }
+
+  if (Array.isArray(items)) {
+    for (const item of items) {
       if (!item || typeof item !== 'object') continue;
       extractItem(item as Record<string, unknown>);
     }
-  } else if (typeof rawResults === 'object') {
-    for (const [key, val] of Object.entries(rawResults as Record<string, unknown>)) {
+  } else if (typeof items === 'object' && items !== null) {
+    for (const [key, val] of Object.entries(items as Record<string, unknown>)) {
       if (typeof val === 'string') {
         extractItem({ stdout: val }, key);
       } else if (val && typeof val === 'object') {

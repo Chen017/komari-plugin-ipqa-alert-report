@@ -69,13 +69,13 @@ export async function runDailyReport(server: ServerContext, now = new Date()): P
 
     console.log(`[IPQA] selected nodes: ${targets.length}`);
 
-    // Sync latest archives and update node-index cache if enabled
+    // Sync latest archives and update node-index cache before generating daily report
     if (config.sync_archives) {
       try {
-        const { syncFleetArchives } = await import('./ipqa/archive-sync.ts');
-        await syncFleetArchives(server, targets);
+        const { syncIpqaArchives } = await import('./ipqa/archive-sync.ts');
+        await syncIpqaArchives(server, { reason: 'pre-report', now });
       } catch (syncErr) {
-        console.warn('[IPQA] Fleet archive sync error during daily run:', syncErr);
+        console.warn('[IPQA] Pre-report archive sync error during daily run:', syncErr);
       }
     }
 
@@ -146,11 +146,28 @@ export async function runDailyReport(server: ServerContext, now = new Date()): P
  * Scheduler tick triggered every minute by server.cron("* * * * *").
  */
 export async function schedulerTick(server: ServerContext, now = new Date()): Promise<void> {
+  const bj = getBeijingParts(now);
+
+  // 1. Daily archive sync retry window: 04:10–05:30 Asia/Shanghai, every 5 minutes (Section 5)
+  const isInDailySyncWindow =
+    (bj.hour === 4 && bj.minute >= 10) || (bj.hour === 5 && bj.minute <= 30);
+  if (isInDailySyncWindow && bj.minute % 5 === 0) {
+    try {
+      const config = await loadConfig(server);
+      if (config.enabled && config.sync_archives) {
+        const { syncIpqaArchives } = await import('./ipqa/archive-sync.ts');
+        await syncIpqaArchives(server, { reason: 'daily', now });
+      }
+    } catch (dailySyncErr) {
+      console.warn('[IPQA] Daily archive sync encountered error:', dailySyncErr);
+    }
+  }
+
+  // 2. Daily 07:00 due window (Section 8)
   if (!isBeijingDue(now)) {
     return;
   }
 
-  const bj = getBeijingParts(now);
   const dateKey = formatBeijingDateKey(bj);
   const state = loadState();
 
@@ -177,5 +194,5 @@ export function registerScheduler(server: ServerContext): void {
       console.error('[IPQA] Scheduled run encountered error:', err);
     }
   });
-  console.log('[IPQA] Scheduler registered: checking every minute for Beijing 07:00 due window');
+  console.log('[IPQA] Scheduler registered: checking every minute for Beijing 04:10-05:30 sync and 07:00 report windows');
 }

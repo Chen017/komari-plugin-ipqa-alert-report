@@ -154,7 +154,7 @@ test('archive-pair: daily pairing and duplicate same-date selection', () => {
     '2026-09-21_040001.json'
   );
   const v4Later = normalizeRawIpqa(
-    { Info: { IP: '1.1.1.2' }, Score: { IPQS: 80 } }, // High risk
+    { Info: { IP: '1.1.1.2' }, Score: { IPQS: 85 } }, // High risk
     'v4',
     '2026-09-21_120000.json'
   );
@@ -235,7 +235,7 @@ test('archive-diff: semantic and generic leaf diff', () => {
 
   const scoreChange = changes.find(c => c.field === 'scores.IPQS');
   assert.ok(scoreChange);
-  assert.strictEqual(scoreChange.severity, 'WARNING');
+  assert.strictEqual(scoreChange.severity, 'CRITICAL');
 
   const factorChange = changes.find(c => c.field === 'factors.Proxy.IPQS');
   assert.ok(factorChange);
