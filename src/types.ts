@@ -85,7 +85,6 @@ export interface PluginState {
   schema_version: number;
   last_run_beijing_date: string;
   last_success_at?: string;
-  last_task_id?: string;
   last_summary?: {
     selected_nodes: number;
     alert_nodes: number;
