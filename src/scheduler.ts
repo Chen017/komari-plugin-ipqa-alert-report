@@ -49,7 +49,7 @@ function buildDeliveryResults(
     if (sentKeys.has(failureDeliveryKey(node))) {
       return {
         ...node,
-        status: 'OK',
+        status: 'OK' as const,
         alerts: [],
       };
     }
