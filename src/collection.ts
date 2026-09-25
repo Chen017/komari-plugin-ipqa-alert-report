@@ -11,7 +11,6 @@ import { buildIpqaReadCommand, runRemoteTask } from './remote.ts';
 import { filterAlerts, mergeAlerts, parseLegacyTaskResult } from './ipqa.ts';
 import { semanticChangesToAlerts } from './ipqa/archive-alerts.ts';
 import { getDailyReport } from './storage/archive-store.ts';
-import { beijingEpochSeconds } from './time.ts';
 
 export interface CollectDailyNodeResultsParams {
   server: ServerContext;
@@ -20,49 +19,7 @@ export interface CollectDailyNodeResultsParams {
   dateKey: string;
   startEpoch: number;
   endEpoch: number;
-  dateKeys?: string[];
-}
-
-/**
- * Parses an alert timestamp into epoch seconds (aligned with Beijing time parts).
- */
-export function parseAlertEpoch(timestamp: string): number | null {
-  const ts = (timestamp || '').trim();
-  if (!ts) return null;
-
-  const match = ts.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/);
-  if (match) {
-    const y = parseInt(match[1], 10);
-    const m = parseInt(match[2], 10);
-    const d = parseInt(match[3], 10);
-    const h = parseInt(match[4], 10);
-    const min = parseInt(match[5], 10);
-    const s = parseInt(match[6], 10);
-    return beijingEpochSeconds(y, m, d, h, min, s);
-  }
-
-  return null;
-}
-
-/**
- * Checks if an alert falls within the target epoch window [startEpoch, endEpoch].
- * Strictly filters archive_diff alerts with full date-time timestamps.
- * Retains date-only fallback alerts to avoid accidental exclusion.
- */
-export function isAlertInsideWindow(
-  alert: IpqaAlert,
-  startEpoch: number,
-  endEpoch: number
-): boolean {
-  if (alert.source !== 'archive_diff') {
-    return true;
-  }
-  const epoch = parseAlertEpoch(alert.timestamp);
-  if (epoch !== null) {
-    return epoch >= startEpoch && epoch <= endEpoch;
-  }
-
-  return true;
+  includeSemantic?: boolean;
 }
 
 interface SemanticNodeSource {
@@ -72,8 +29,8 @@ interface SemanticNodeSource {
 
 /**
  * Collects and processes alerts for all target nodes:
- * 1. Fetches remote alerts.log across nodes in parallel.
- * 2. Reads local paired archive reports for the date window (semantic diffs).
+ * 1. Reads local paired archive reports for the scheduled logical date (semantic diffs).
+ * 2. Fetches remote alerts.log across nodes in parallel (best-effort supplemental).
  * 3. Merges semantic changes with supplemental legacy alerts.
  * 4. Deduplicates overlapping events.
  * 5. Applies unified severity and initial archive filtering.
@@ -81,31 +38,31 @@ interface SemanticNodeSource {
 export async function collectDailyNodeResults(
   params: CollectDailyNodeResultsParams
 ): Promise<NodeCollectionResult[]> {
-  const { server, targets, config, dateKey, startEpoch, endEpoch, dateKeys } = params;
+  const {
+    server,
+    targets,
+    config,
+    dateKey,
+    startEpoch,
+    endEpoch,
+    includeSemantic = true,
+  } = params;
 
   if (targets.length === 0) {
     return [];
   }
 
   // 1. Resolve local semantic source for every node first
-  const targetDateKeys = dateKeys && dateKeys.length > 0 ? dateKeys : [dateKey];
   const semanticByNode = new Map<string, SemanticNodeSource>();
 
   for (const node of targets) {
     let available = false;
-    const alerts: IpqaAlert[] = [];
-    if (config.sync_archives !== false) {
-      for (const dk of targetDateKeys) {
-        const dailyReport = getDailyReport(node.uuid, dk);
-        if (dailyReport) {
-          available = true;
-          const rawAlerts = semanticChangesToAlerts(node.uuid, dailyReport);
-          for (const alert of rawAlerts) {
-            if (isAlertInsideWindow(alert, startEpoch, endEpoch)) {
-              alerts.push(alert);
-            }
-          }
-        }
+    let alerts: IpqaAlert[] = [];
+    if (includeSemantic && config.sync_archives !== false) {
+      const dailyReport = getDailyReport(node.uuid, dateKey);
+      if (dailyReport) {
+        available = true;
+        alerts = semanticChangesToAlerts(node.uuid, dailyReport);
       }
     }
     semanticByNode.set(node.uuid, { available, alerts });

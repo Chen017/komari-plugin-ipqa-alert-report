@@ -603,25 +603,11 @@ describe('Alert Unification & Stale Node Regression Test Suite', () => {
     assert.strictEqual(mergeRes.deduplicatedCount, 0, 'No false deduplication');
   });
 
-  // Case 21 — last_24h boundary
-  it('Case 21: last_24h window excludes yesterday semantic changes older than 24h', async () => {
+  // Case 21 — last_24h is legacy-only, while today_0700 unifies semantic
+  it('Case 21: last_24h is legacy-only while today_0700 remains unified', async () => {
     const node = makeNode({ uuid: 'node-c21', name: 'Node C21' });
     const testNow = new Date('2026-09-25T12:00:00Z'); // 20:00 BJT
 
-    // 1. Yesterday archive generated at 04:00 BJT (older than 24h -> outside window!)
-    seedDailyReport(node.uuid, {
-      date: '2026-09-24',
-      timestamp: '2026-09-24T04:00:00Z',
-      changes: [
-        makeSemanticChange({
-          nodeUuid: node.uuid,
-          date: '2026-09-24',
-          description: 'Yesterday 04:00 change (should be excluded)',
-        }),
-      ],
-    });
-
-    // 2. Today archive generated at 04:00 BJT (inside window [2026-09-24 20:00, 2026-09-25 20:00])
     seedDailyReport(node.uuid, {
       date: '2026-09-25',
       timestamp: '2026-09-25T04:00:00Z',
@@ -629,7 +615,8 @@ describe('Alert Unification & Stale Node Regression Test Suite', () => {
         makeSemanticChange({
           nodeUuid: node.uuid,
           date: '2026-09-25',
-          description: 'Today 04:00 change (should be included)',
+          severity: 'CRITICAL',
+          description: 'Semantic IPQS risk score changed to 85',
         }),
       ],
     });
@@ -637,12 +624,22 @@ describe('Alert Unification & Stale Node Regression Test Suite', () => {
     const server = makeMockServer({
       nodes: [node],
       taskResults: [
-        { client_id: node.uuid, status: 'completed', stdout: '__IPQA_STATUS__|OK\n' },
+        {
+          client_id: node.uuid,
+          status: 'completed',
+          stdout: '__IPQA_STATUS__|OK\n2026-09-25 10:00:00|WARNING|Legacy in-window alert|IPv4\n',
+        },
       ],
     });
 
-    const result = await runTestReport(server, { window: 'last_24h' }, testNow);
-    assert.strictEqual(result.alertCount, 1, 'Only today 04:00 change should be included in last_24h');
-    assert.strictEqual(result.report?.alertNodes[0].alerts[0].message, 'Today 04:00 change (should be included)');
+    // 1. last_24h ignores semantic archive, uses only legacy alerts.log
+    const result24h = await runTestReport(server, { window: 'last_24h' }, testNow);
+    assert.strictEqual(result24h.alertCount, 1, 'last_24h should only include legacy alert');
+    assert.strictEqual(result24h.report?.alertNodes[0].alerts[0].source, 'alerts_log');
+    assert.strictEqual(result24h.report?.alertNodes[0].alerts[0].message, 'Legacy in-window alert');
+
+    // 2. today_0700 unifies semantic archive and supplemental legacy
+    const result0700 = await runTestReport(server, { window: 'today_0700' }, testNow);
+    assert.strictEqual(result0700.alertCount, 2, 'today_0700 should unify semantic and legacy alerts');
   });
 });

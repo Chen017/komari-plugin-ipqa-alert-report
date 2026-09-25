@@ -167,11 +167,6 @@ export async function runTestReport(
   );
   console.log(`[IPQA-TEST] Query window: ${windowStart} -> ${windowEnd}`);
 
-  const dateKeys =
-    options.window === 'last_24h'
-      ? [formatBeijingDateKey(getBeijingParts(new Date(startEpoch * 1000))), dateKey]
-      : [dateKey];
-
   const nodeResults: NodeCollectionResult[] = await collectDailyNodeResults({
     server,
     targets,
@@ -179,7 +174,7 @@ export async function runTestReport(
     dateKey,
     startEpoch,
     endEpoch,
-    dateKeys: Array.from(new Set(dateKeys)),
+    includeSemantic: options.window !== 'last_24h',
   });
 
   const report = buildDailyReport({
