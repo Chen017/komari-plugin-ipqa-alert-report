@@ -45,7 +45,7 @@ export async function fetchAllNodes(server: {
     });
   } catch (err) {
     console.error('[IPQA] Failed to call common:getNodes', err);
-    return [];
+    throw err;
   }
 }
 
