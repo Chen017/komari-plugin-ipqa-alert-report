@@ -26,6 +26,15 @@ const REQUIRED_RPCS = [
 
 let isCompatible = true;
 
+export function isAdminPrincipal(principal: any): boolean {
+  return Boolean(
+    principal &&
+      ((principal.type === 'user' && principal.roles?.includes('admin')) ||
+        principal.type === 'api_key' ||
+        principal.is_api_key === true)
+  );
+}
+
 /**
  * Validates RPC runtime compatibility on plugin load (Section 33).
  * If a required RPC is missing, sets isCompatible = false and logs clearly.
@@ -170,11 +179,7 @@ export async function load(): Promise<void> {
     const testRouteHandler = async (req: any, res: any) => {
       try {
         const p = req?.context?.principal;
-        const isAdmin =
-          p &&
-          ((p.type === 'user' && p.roles?.includes('admin')) ||
-            p.type === 'api_key' ||
-            p.is_api_key === true);
+        const isAdmin = isAdminPrincipal(p);
         if (!isAdmin) {
           res.statusCode = 403;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -218,11 +223,7 @@ export async function load(): Promise<void> {
     const syncRouteHandler = async (req: any, res: any) => {
       try {
         const p = req?.context?.principal;
-        const isAdmin =
-          p &&
-          ((p.type === 'user' && p.roles?.includes('admin')) ||
-            p.type === 'api_key' ||
-            p.is_api_key === true);
+        const isAdmin = isAdminPrincipal(p);
         if (!isAdmin) {
           res.statusCode = 403;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
