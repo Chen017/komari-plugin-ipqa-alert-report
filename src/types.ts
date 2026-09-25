@@ -90,10 +90,16 @@ export interface ArchiveSyncState {
 export interface DailyDeliveryState {
   beijing_date: string;
   /**
-   * Stable identities for alerts / failure notices that were already delivered
-   * during the current logical day. Used to make catch-up retries idempotent.
+   * Exact identities for alerts / failure notices already delivered during the
+   * current logical day. Used to make catch-up retries idempotent.
    */
   sent_keys: string[];
+  /**
+   * Cross-source identities for legacy alerts delivered before that node's
+   * semantic archive became available. They are consumed when the matching
+   * semantic alert arrives, preventing a legacy -> semantic duplicate send.
+   */
+  pending_legacy_overlap_keys?: string[];
 }
 
 export interface PluginState {
