@@ -22,20 +22,6 @@ export function getSeverityEmoji(level: string): string {
 }
 
 /**
- * Extracts HH:mm from timestamp string (e.g. "2026-09-21 04:10:02" or "04:10:02" -> "04:10").
- */
-export function formatAlertTime(timestamp: string): string {
-  const trimmed = timestamp.trim();
-  const parts = trimmed.split(/\s+/);
-  const timeStr = parts.length >= 2 ? parts[1] : parts[0];
-  const timeParts = timeStr.split(':');
-  if (timeParts.length >= 2) {
-    return `${timeParts[0]}:${timeParts[1]}`;
-  }
-  return trimmed;
-}
-
-/**
  * Builds aggregated DailyReport object from node collection results.
  */
 export function buildDailyReport(params: {
