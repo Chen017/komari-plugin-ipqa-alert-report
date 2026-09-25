@@ -47,7 +47,6 @@ export interface NodeSyncResult {
     | 'stale'
     | 'no_archive'
     | 'not_installed'
-    | 'offline'
     | 'failed';
   previousLatestDate?: string | null;
   latestDate?: string | null;
@@ -522,12 +521,3 @@ export async function syncIpqaArchives(
   };
 }
 
-/**
- * Backward-compatible fleet sync wrapper.
- */
-export async function syncFleetArchives(
-  server: ServerContext,
-  _nodes?: KomariNode[]
-): Promise<void> {
-  await syncIpqaArchives(server, { reason: 'manual' });
-}
