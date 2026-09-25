@@ -68,6 +68,7 @@ export interface ClassifiedLegacyAlert {
     | 'dnsbl'
     | 'initial_archive'
     | 'unknown';
+  typeKind?: 'info_type' | 'usage_type' | 'company_type';
   providerOrService?: string;
   isSupplemental: boolean;
 }
@@ -124,13 +125,15 @@ export function classifyLegacyAlertForDedupe(alert: IpqaAlert): ClassifiedLegacy
     };
   }
 
-  // Type
-  if (
-    msg.includes('原生/广播类型') ||
-    msg.includes('使用类型属性变更为') ||
-    msg.includes('公司类型属性变更为')
-  ) {
-    return { category: 'type', isSupplemental: false };
+  // Type (distinguish info_type, usage_type, company_type)
+  if (msg.includes('原生/广播类型')) {
+    return { category: 'type', typeKind: 'info_type', isSupplemental: false };
+  }
+  if (msg.includes('使用类型属性变更为') || msg.includes('使用类型')) {
+    return { category: 'type', typeKind: 'usage_type', isSupplemental: false };
+  }
+  if (msg.includes('公司类型属性变更为') || msg.includes('公司类型')) {
+    return { category: 'type', typeKind: 'company_type', isSupplemental: false };
   }
 
   // Factor
@@ -183,6 +186,7 @@ export function mergeAlerts(
   const semanticCoverage: Array<{
     ipVersion: string;
     category: string;
+    typeKind?: 'info_type' | 'usage_type' | 'company_type';
     providerOrService?: string;
   }> = [];
 
@@ -197,6 +201,7 @@ export function mergeAlerts(
 
       let normCategory = category;
       let providerOrService: string | undefined;
+      let typeKind: 'info_type' | 'usage_type' | 'company_type' | undefined;
 
       if (category === 'score') {
         normCategory = 'score';
@@ -213,6 +218,13 @@ export function mergeAlerts(
         }
       } else if (category === 'type') {
         normCategory = 'type';
+        if (field === 'info.type') {
+          typeKind = 'info_type';
+        } else if (field.startsWith('type.usage') || field.startsWith('usage')) {
+          typeKind = 'usage_type';
+        } else if (field.startsWith('type.company') || field.startsWith('company')) {
+          typeKind = 'company_type';
+        }
       } else if (category === 'factor') {
         normCategory = 'factor';
         const fParts = field.split('.');
@@ -224,6 +236,7 @@ export function mergeAlerts(
       semanticCoverage.push({
         ipVersion,
         category: normCategory,
+        typeKind,
         providerOrService,
       });
     }
@@ -257,6 +270,9 @@ export function mergeAlerts(
       }
       if (sc.category !== classified.category) {
         return false;
+      }
+      if (classified.category === 'type') {
+        return Boolean(classified.typeKind && sc.typeKind && classified.typeKind === sc.typeKind);
       }
       if (classified.providerOrService && sc.providerOrService) {
         return (
