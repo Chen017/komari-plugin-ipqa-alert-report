@@ -1005,6 +1005,114 @@ describe('Alert Unification & Stale Node Regression Test Suite', () => {
     // Final minute closes the day even if the intentionally paused node never updates.
     await runDailyReport(server, new Date('2026-09-24T23:09:00Z'));
     assert.strictEqual(messages.length, 2);
+    const finalState = loadState();
+    assert.strictEqual(finalState.last_run_beijing_date, '2026-09-25');
+    assert.strictEqual(
+      finalState.last_summary?.alerts,
+      2,
+      'A quiet final retry must not overwrite the full daily summary with alerts=0'
+    );
+  });
+
+  // T34 — legacy first, semantic later: same event is delivered once, but a
+  // genuinely different later semantic change for the same provider still sends.
+  it('T34: legacy-to-semantic reconciliation prevents duplicates without suppressing later changes', async () => {
+    const datawave = makeNode({ uuid: 'dw-cross-source', name: 'DataWave' });
+    const zouter = makeNode({ uuid: 'zo-hold-window', name: 'Zouter' });
+
+    const legacyLine =
+      '2026-09-25 04:05:00|WARNING|IPQS 风险等级上升至 [极高风险]|IPv4';
+    const taskResults = [
+      {
+        client_id: datawave.uuid,
+        status: 'completed',
+        stdout: `__IPQA_STATUS__|OK\n${legacyLine}\n`,
+      },
+      {
+        client_id: zouter.uuid,
+        status: 'completed',
+        stdout: '__IPQA_STATUS__|OK\n',
+      },
+    ];
+
+    const messages = [];
+    const server = makeMockServer({
+      nodes: [datawave, zouter],
+      taskResults,
+      onNotification: (p) => {
+        messages.push(p?.event?.message || p?.message || '');
+      },
+    });
+
+    // 07:00 — DataWave has no semantic archive yet, so the legacy event is sent.
+    await runDailyReport(server, new Date('2026-09-24T23:00:00Z'));
+    assert.strictEqual(messages.length, 1);
+    assert.ok(messages[0].includes('IPQS 风险等级上升至 [极高风险]'));
+
+    const stateAfterLegacy = loadState();
+    assert.ok(
+      (stateAfterLegacy.daily_delivery?.pending_legacy_overlap_keys ?? []).some(
+        key => key.includes('dw-cross-source|IPv4|score|ipqs')
+      ),
+      'Legacy event should remain pending for one cross-source reconciliation'
+    );
+
+    // 07:01 — the matching semantic archive arrives. It represents the same
+    // business event and must NOT generate a second Telegram message.
+    seedDailyReport(datawave.uuid, {
+      date: '2026-09-25',
+      changes: [
+        makeSemanticChange({
+          nodeUuid: datawave.uuid,
+          field: 'scores.IPQS',
+          before: 'Low',
+          after: 'Critical',
+          description: 'IPQS semantic equivalent of the already-sent legacy alert',
+        }),
+      ],
+    });
+    await runDailyReport(server, new Date('2026-09-24T23:01:00Z'));
+    assert.strictEqual(
+      messages.length,
+      1,
+      'Matching semantic alert must be reconciled with the already-sent legacy event'
+    );
+
+    const stateAfterReconcile = loadState();
+    assert.equal(
+      (stateAfterReconcile.daily_delivery?.pending_legacy_overlap_keys ?? []).some(
+        key => key.includes('dw-cross-source|IPv4|score|ipqs')
+      ),
+      false,
+      'The temporary cross-source bridge must be consumed after reconciliation'
+    );
+
+    // 07:02 — a genuinely different semantic change for the same provider
+    // appears. Because the bridge was consumed, this new exact semantic event
+    // must still be deliverable.
+    seedDailyReport(datawave.uuid, {
+      date: '2026-09-25',
+      changes: [
+        makeSemanticChange({
+          nodeUuid: datawave.uuid,
+          field: 'scores.IPQS',
+          before: 'Low',
+          after: 'Critical-2',
+          description: 'IPQS genuinely new later semantic change',
+        }),
+      ],
+    });
+    await runDailyReport(server, new Date('2026-09-24T23:02:00Z'));
+    assert.strictEqual(messages.length, 2);
+    assert.ok(messages[1].includes('IPQS genuinely new later semantic change'));
+
+    // Same snapshot again remains idempotent.
+    await runDailyReport(server, new Date('2026-09-24T23:03:00Z'));
+    assert.strictEqual(messages.length, 2);
+
+    // Zouter intentionally keeps the catch-up window open until the final tick.
+    await runDailyReport(server, new Date('2026-09-24T23:09:00Z'));
+    assert.strictEqual(messages.length, 2);
     assert.strictEqual(loadState().last_run_beijing_date, '2026-09-25');
   });
 
