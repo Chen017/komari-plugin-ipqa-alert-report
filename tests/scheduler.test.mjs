@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { schedulerTick, runDailyReport } from '../src/scheduler.ts';
 import { loadConfig } from '../src/config.ts';
 import { getStateFilePath, saveState, INITIAL_STATE } from '../src/state.ts';
+import { saveDailyReport } from '../src/storage/archive-store.ts';
 
 describe('scheduler.ts - Scheduler Due & Duplicate Prevention', () => {
   const testStorageDir = path.resolve(process.cwd(), 'storage');
@@ -65,6 +66,40 @@ describe('scheduler.ts - Scheduler Due & Duplicate Prevention', () => {
         return {};
       },
     };
+
+    // Mark today's semantic archive as available so the first successful tick
+    // legitimately closes the logical day. Missing semantic data is intentionally
+    // covered by the catch-up retry tests instead.
+    saveDailyReport('n1', {
+      schemaVersion: 1,
+      nodeUuid: 'n1',
+      date: '2026-09-21',
+      updatedAt: '2026-09-20T20:00:00.000Z',
+      v4: {
+        schemaVersion: 1,
+        ipVersion: 'IPv4',
+        archiveId: '2026-09-21_040000.json',
+        date: '2026-09-21',
+        timestamp: '2026-09-20T20:00:00.000Z',
+        info: {},
+        scores: {},
+        type: { usage: {}, company: {} },
+        factors: {},
+        media: {},
+        mail: {},
+        extra: {},
+      },
+      v6: null,
+      summary: {
+        hasV4: true,
+        hasV6: false,
+        highestRiskCategory: 'Unknown',
+        highestRiskSource: 'None',
+        mediaSummary: {},
+        aiSummary: {},
+      },
+      changesFromPrevious: [],
+    });
 
     // 2026-09-20 23:00:00 UTC = 2026-09-21 07:00:00 BJT
     const dueTime = new Date('2026-09-20T23:00:00.000Z');
