@@ -43,6 +43,12 @@ export interface NodeCollectionResult {
   status: NodeCollectionStatus;
   alerts: IpqaAlert[];
   error?: string;
+  /**
+   * True when the primary semantic archive exists for the requested logical day.
+   * This lets the scheduler distinguish a complete node from a legacy-only fallback
+   * so a temporarily late archive can be retried without blocking other nodes.
+   */
+  semanticAvailable?: boolean;
 }
 
 export interface DailyReport {
@@ -81,6 +87,15 @@ export interface ArchiveSyncState {
   nodes: Record<string, NodeSyncState>;
 }
 
+export interface DailyDeliveryState {
+  beijing_date: string;
+  /**
+   * Stable identities for alerts / failure notices that were already delivered
+   * during the current logical day. Used to make catch-up retries idempotent.
+   */
+  sent_keys: string[];
+}
+
 export interface PluginState {
   schema_version: number;
   last_run_beijing_date: string;
@@ -94,6 +109,7 @@ export interface PluginState {
   attempt_date?: string;
   attempt_count?: number;
   archive_sync?: ArchiveSyncState;
+  daily_delivery?: DailyDeliveryState;
 }
 
 export interface TaskExecResult {
@@ -141,4 +157,3 @@ export interface TaskExecResult {
 
   [key: string]: unknown;
 }
-
