@@ -4,6 +4,7 @@ import type {
   NodeCollectionResult,
   NodeCollectionStatus,
   PluginConfig,
+  TaskExecResult,
 } from './types.ts';
 import type { ServerContext } from './scheduler.ts';
 import { buildIpqaReadCommand, runRemoteTask } from './remote.ts';
@@ -110,23 +111,52 @@ export async function collectDailyNodeResults(
     semanticByNode.set(node.uuid, { available, alerts });
   }
 
-  // 2. Fetch remote alerts.log across nodes
+  // 2. Fetch remote alerts.log across nodes (best-effort supplemental)
   const command = buildIpqaReadCommand(startEpoch, endEpoch);
   const targetUuids = targets.map(n => n.uuid);
 
-  const { results: remoteResults } = await runRemoteTask(
-    server,
-    command,
-    targetUuids,
-    30_000
+  let remoteResults = new Map<string, TaskExecResult>();
+  let legacyTransportError: Error | null = null;
+
+  try {
+    const res = await runRemoteTask(
+      server,
+      command,
+      targetUuids,
+      30_000
+    );
+    remoteResults = res.results;
+  } catch (err) {
+    legacyTransportError = err instanceof Error ? err : new Error(String(err));
+    console.warn(
+      `[IPQA] Supplemental alerts.log remote task execution failed: ${legacyTransportError.message}`
+    );
+  }
+
+  // Check if any target node has primary semantic source available
+  const hasAnySemanticAvailable = Array.from(semanticByNode.values()).some(
+    s => s.available
   );
+
+  // If no node has primary semantic source available, rethrow to retain global retry/attempt behavior
+  if (!hasAnySemanticAvailable && legacyTransportError) {
+    throw legacyTransportError;
+  }
 
   const nodeResults: NodeCollectionResult[] = [];
 
   for (const node of targets) {
     const semantic = semanticByNode.get(node.uuid) || { available: false, alerts: [] };
     const taskResult = remoteResults.get(node.uuid);
-    const legacy = parseLegacyTaskResult(taskResult);
+    const legacy = legacyTransportError
+      ? {
+          status: 'EXEC_FAILED' as const,
+          alerts: [],
+          error: legacyTransportError.message,
+          rawCount: 0,
+          malformedCount: 0,
+        }
+      : parseLegacyTaskResult(taskResult);
 
     // Primary: semantic source available (even with 0 changes, node status is OK)
     if (semantic.available) {
