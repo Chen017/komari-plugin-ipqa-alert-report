@@ -24,6 +24,7 @@ import type {
   IpqaFleetOverview,
   IpqaNodeOverview,
   IpqaNormalizedReport,
+  ManifestEntry,
 } from './types.ts';
 
 const BATCH_SIZE = 8;
@@ -256,7 +257,7 @@ export async function syncNodeArchives(
     }
 
     // 4. Normalize, pair, and compute diffs for all cached files
-    rebuildNodeDailyReports(node.uuid);
+    rebuildNodeDailyReports(node.uuid, remoteEntries);
 
     const updatedLatest = getLatestDailyReport(node.uuid);
     const latestDate = updatedLatest?.date ?? null;
@@ -298,7 +299,20 @@ export async function syncNodeArchives(
 /**
  * Rebuilds all daily paired reports and diffs for a node from local raw cache.
  */
-export function rebuildNodeDailyReports(nodeUuid: string): void {
+export function rebuildNodeDailyReports(
+  nodeUuid: string,
+  remoteEntries?: ManifestEntry[]
+): void {
+  const mtimeMap = new Map<string, number>();
+  if (remoteEntries) {
+    for (const e of remoteEntries) {
+      if (e.mtime && e.mtime > 0) {
+        mtimeMap.set(`${e.ipVersion}|${e.filename}`, e.mtime);
+        mtimeMap.set(e.filename, e.mtime);
+      }
+    }
+  }
+
   const v4Filenames = listCachedRawFilenames(nodeUuid, 'v4');
   const v6Filenames = listCachedRawFilenames(nodeUuid, 'v6');
 
@@ -306,7 +320,8 @@ export function rebuildNodeDailyReports(nodeUuid: string): void {
   for (const fn of v4Filenames) {
     const raw = readRawArchive(nodeUuid, 'v4', fn);
     if (raw) {
-      v4Reports.push(normalizeRawIpqa(raw, 'v4', fn));
+      const mtime = mtimeMap.get(`v4|${fn}`) ?? mtimeMap.get(fn);
+      v4Reports.push(normalizeRawIpqa(raw, 'v4', fn, mtime));
     }
   }
 
@@ -314,7 +329,8 @@ export function rebuildNodeDailyReports(nodeUuid: string): void {
   for (const fn of v6Filenames) {
     const raw = readRawArchive(nodeUuid, 'v6', fn);
     if (raw) {
-      v6Reports.push(normalizeRawIpqa(raw, 'v6', fn));
+      const mtime = mtimeMap.get(`v6|${fn}`) ?? mtimeMap.get(fn);
+      v6Reports.push(normalizeRawIpqa(raw, 'v6', fn, mtime));
     }
   }
 

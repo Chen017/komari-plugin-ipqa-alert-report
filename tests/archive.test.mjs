@@ -15,6 +15,7 @@ import {
 } from '../src/ipqa/archive-normalize.ts';
 import { pairDailyReports } from '../src/ipqa/archive-pair.ts';
 import { compareDailyReports } from '../src/ipqa/archive-diff.ts';
+import { rebuildNodeDailyReports } from '../src/ipqa/archive-sync.ts';
 import {
   saveRawArchive,
   getDailyReport,
@@ -293,4 +294,43 @@ test('archive-store: persistence across cache operations', () => {
   const loadedFleet = getFleetOverview();
   assert.ok(loadedFleet);
   assert.strictEqual(loadedFleet.total_nodes, 1);
+});
+
+test('archive-normalize: authoritative mtimeEpoch produces true UTC timestamp and Beijing date', () => {
+  const raw = { Info: { IP: '1.2.3.4' } };
+  // 2026-09-21 20:00:00 UTC = 2026-09-22 04:00:00 Beijing
+  const mtime = 1790020800;
+  const normalized = normalizeRawIpqa(raw, 'v4', '2026-09-21_130000.json', mtime);
+  assert.strictEqual(normalized.timestamp, '2026-09-21T20:00:00.000Z');
+  assert.strictEqual(normalized.date, '2026-09-22');
+});
+
+test('archive-normalize: absent mtimeEpoch falls back to filename date and naive timestamp without fake Z', () => {
+  const raw = { Info: { IP: '1.2.3.4' } };
+  const normalized = normalizeRawIpqa(raw, 'v4', '2026-09-21_130000.json');
+  assert.strictEqual(normalized.timestamp, '2026-09-21T13:00:00');
+  assert.strictEqual(normalized.date, '2026-09-21');
+  assert.ok(!normalized.timestamp.endsWith('Z'), 'Naive fallback must not end with Z');
+});
+
+test('archive-sync: rebuildNodeDailyReports maps manifest mtime into normalized reports', () => {
+  const nodeUuid = 'mtime-test-node';
+  saveRawArchive(nodeUuid, 'v4', '2026-09-21_130000.json', { Info: { IP: '1.2.3.4' } });
+
+  const remoteEntries = [
+    {
+      ipVersion: 'v4',
+      filename: '2026-09-21_130000.json',
+      date: '2026-09-21',
+      size: 100,
+      mtime: 1790020800, // 20:00 UTC -> 2026-09-22 Beijing
+    },
+  ];
+
+  rebuildNodeDailyReports(nodeUuid, remoteEntries);
+
+  const report = getDailyReport(nodeUuid, '2026-09-22');
+  assert.ok(report, 'Report should be indexed under 2026-09-22 via mtime');
+  assert.strictEqual(report.date, '2026-09-22');
+  assert.strictEqual(report.v4?.timestamp, '2026-09-21T20:00:00.000Z');
 });

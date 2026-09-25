@@ -125,8 +125,13 @@ test('Section 37: Multiple VPS timezones normalize to same Beijing logical date'
   assert.strictEqual(beijingDateStr, '2026-09-22');
 
   const rawSample = { Info: { IP: '1.1.1.1' }, Score: { ipapi: '2.5%' } };
-  const normalized = normalizeRawIpqa(rawSample, 'v4', '2026-09-21_200001.json');
-  assert.strictEqual(normalized.date, '2026-09-22', 'Filename timestamp in UTC must normalize to Beijing date');
+  const normalized = normalizeRawIpqa(
+    rawSample,
+    'v4',
+    '2026-09-21_200001.json',
+    Math.floor(utcDate.getTime() / 1000)
+  );
+  assert.strictEqual(normalized.date, '2026-09-22', 'Manifest mtime epoch in UTC must normalize to Beijing date');
 });
 
 // ---------------------------------------------------------------------------
@@ -159,10 +164,10 @@ test('Section 29, 30, 31, 38: Mock server archive sync and API consistency', asy
   const nodeUuid = 'mock-node-1';
   const mockNode = { uuid: nodeUuid, name: 'DataWave', weight: 1 };
 
-  // Set up mock server
+  // Set up mock server (2026-09-21T20:00:01Z epoch = 1790020801)
   let mockManifestOutput = `
 __IPQA_MANIFEST_BEGIN__
-__IPQA_ENTRY__|v4|2026-09-21_200001.json|500|1789992001
+__IPQA_ENTRY__|v4|2026-09-21_200001.json|500|1790020801
 __IPQA_MANIFEST_END__
 `;
 

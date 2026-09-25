@@ -38,25 +38,30 @@ export function cleanRegion(raw: unknown): string {
 export function normalizeRawIpqa(
   raw: any,
   ipVer: IpVersion,
-  filename: string
+  filename: string,
+  mtimeEpoch?: number
 ): IpqaNormalizedReport {
   const normIpVer: NormalizedIpVersion = ipVer === 'v6' ? 'IPv6' : 'IPv4';
 
-  // Parse date and time from filename: YYYY-MM-DD_HHMMSS.json
-  const match = ARCHIVE_FILENAME_REGEX.exec(filename);
-  let date = match ? match[1]! : new Date().toISOString().slice(0, 10);
+  let date: string;
+  let timestamp: string;
 
-  let timestamp = new Date().toISOString();
-  if (filename.length >= 17) {
-    const timePart = filename.slice(11, 17); // HHMMSS
-    const hh = timePart.slice(0, 2);
-    const mm = timePart.slice(2, 4);
-    const ss = timePart.slice(4, 6);
-    timestamp = `${date}T${hh}:${mm}:${ss}Z`;
-    // Timezone correction: if the timestamp in UTC rolls into Beijing date, correct the date
-    const utcMs = Date.parse(timestamp);
-    if (Number.isFinite(utcMs)) {
-      date = toBeijingDateString(new Date(utcMs));
+  if (mtimeEpoch !== undefined && Number.isFinite(mtimeEpoch) && mtimeEpoch > 0) {
+    const d = new Date(mtimeEpoch * 1000);
+    timestamp = d.toISOString();
+    date = toBeijingDateString(d);
+  } else {
+    // Fallback: parse date and naive time from filename: YYYY-MM-DD_HHMMSS.json
+    const match = ARCHIVE_FILENAME_REGEX.exec(filename);
+    date = match ? match[1]! : new Date().toISOString().slice(0, 10);
+    if (filename.length >= 17) {
+      const timePart = filename.slice(11, 17); // HHMMSS
+      const hh = timePart.slice(0, 2);
+      const mm = timePart.slice(2, 4);
+      const ss = timePart.slice(4, 6);
+      timestamp = `${date}T${hh}:${mm}:${ss}`;
+    } else {
+      timestamp = `${date}T00:00:00`;
     }
   }
 
