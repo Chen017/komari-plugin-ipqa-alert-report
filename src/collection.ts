@@ -64,6 +64,11 @@ export function isAlertInsideWindow(
   return true;
 }
 
+interface SemanticNodeSource {
+  available: boolean;
+  alerts: IpqaAlert[];
+}
+
 /**
  * Collects and processes alerts for all target nodes:
  * 1. Fetches remote alerts.log across nodes in parallel.
@@ -81,6 +86,31 @@ export async function collectDailyNodeResults(
     return [];
   }
 
+  // 1. Resolve local semantic source for every node first
+  const targetDateKeys = dateKeys && dateKeys.length > 0 ? dateKeys : [dateKey];
+  const semanticByNode = new Map<string, SemanticNodeSource>();
+
+  for (const node of targets) {
+    let available = false;
+    const alerts: IpqaAlert[] = [];
+    if (config.sync_archives !== false) {
+      for (const dk of targetDateKeys) {
+        const dailyReport = getDailyReport(node.uuid, dk);
+        if (dailyReport) {
+          available = true;
+          const rawAlerts = semanticChangesToAlerts(node.uuid, dailyReport);
+          for (const alert of rawAlerts) {
+            if (isAlertInsideWindow(alert, startEpoch, endEpoch)) {
+              alerts.push(alert);
+            }
+          }
+        }
+      }
+    }
+    semanticByNode.set(node.uuid, { available, alerts });
+  }
+
+  // 2. Fetch remote alerts.log across nodes
   const command = buildIpqaReadCommand(startEpoch, endEpoch);
   const targetUuids = targets.map(n => n.uuid);
 
@@ -91,37 +121,22 @@ export async function collectDailyNodeResults(
     30_000
   );
 
-  const targetDateKeys = dateKeys && dateKeys.length > 0 ? dateKeys : [dateKey];
   const nodeResults: NodeCollectionResult[] = [];
 
   for (const node of targets) {
-    // Primary: Gather semantic changes from local daily reports
-    const semanticAlerts: IpqaAlert[] = [];
-    if (config.sync_archives !== false) {
-      for (const dk of targetDateKeys) {
-        const dailyReport = getDailyReport(node.uuid, dk);
-        if (dailyReport) {
-          const rawAlerts = semanticChangesToAlerts(node.uuid, dailyReport);
-          for (const alert of rawAlerts) {
-            if (isAlertInsideWindow(alert, startEpoch, endEpoch)) {
-              semanticAlerts.push(alert);
-            }
-          }
-        }
-      }
-    }
-
+    const semantic = semanticByNode.get(node.uuid) || { available: false, alerts: [] };
     const taskResult = remoteResults.get(node.uuid);
     const legacy = parseLegacyTaskResult(taskResult);
 
-    // If semantic alerts exist, supplemental alerts.log failure does NOT block the report
-    if (semanticAlerts.length > 0) {
+    // Primary: semantic source available (even with 0 changes, node status is OK)
+    if (semantic.available) {
       if (legacy.status !== 'OK') {
         console.warn(
-          `[IPQA] ${node.name}: supplemental alerts.log unavailable (${legacy.status}: ${legacy.error}), proceeding with ${semanticAlerts.length} semantic alert(s)`
+          `[IPQA] ${node.name}: semantic source available; supplemental alerts.log unavailable: ${legacy.status}${legacy.error ? ` (${legacy.error})` : ''}`
         );
       }
-      const mergeRes = mergeAlerts(node.uuid, semanticAlerts, legacy.alerts);
+      const legacyAlerts = legacy.status === 'OK' ? legacy.alerts : [];
+      const mergeRes = mergeAlerts(node.uuid, semantic.alerts, legacyAlerts);
       const filterRes = filterAlerts(mergeRes.merged, config);
 
       console.log(
@@ -138,7 +153,7 @@ export async function collectDailyNodeResults(
       continue;
     }
 
-    // No semantic alerts: legacy status governs
+    // Fallback: semantic source unavailable -> legacy status governs
     if (legacy.status !== 'OK') {
       console.log(`[IPQA] ${node.name}: ${legacy.status}`);
       nodeResults.push({
