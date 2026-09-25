@@ -334,7 +334,7 @@ export function rebuildNodeDailyReports(nodeUuid: string): void {
  * Unified, idempotent IPQA archive synchronization service (Section 3).
  * Used by:
  * - 'startup': background backfill after plugin load
- * - 'daily': 04:10-05:30 BJT retry window
+ * - 'daily': 04:10-04:59 BJT retry window
  * - 'pre-report': 07:00 BJT before sending Telegram report
  * - 'manual': admin-triggered sync now
  */
