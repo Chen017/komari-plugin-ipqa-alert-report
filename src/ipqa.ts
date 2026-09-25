@@ -57,6 +57,283 @@ export function parseAlertLine(line: string): IpqaAlert | null {
   return null;
 }
 
+export interface ClassifiedLegacyAlert {
+  category:
+    | 'score'
+    | 'media_status'
+    | 'media_region'
+    | 'type'
+    | 'factor'
+    | 'expected_region'
+    | 'dnsbl'
+    | 'initial_archive'
+    | 'unknown';
+  providerOrService?: string;
+  isSupplemental: boolean;
+}
+
+/**
+ * Lightweight classification of legacy alerts.log lines for semantic deduplication.
+ */
+export function classifyLegacyAlertForDedupe(alert: IpqaAlert): ClassifiedLegacyAlert {
+  const msg = alert.message || '';
+
+  if (msg.includes('首次完成数据存档监测')) {
+    return { category: 'initial_archive', isSupplemental: false };
+  }
+
+  if (msg.includes('不符合预期')) {
+    return { category: 'expected_region', isSupplemental: true };
+  }
+
+  if (msg.includes('DNS 黑名单') || msg.includes('DNSBL')) {
+    return { category: 'dnsbl', isSupplemental: true };
+  }
+
+  // Score
+  if (msg.includes('风险等级')) {
+    const scoreMatch = msg.match(
+      /(IPQS|DB-IP|DBIP|ipapi|scamalytics|IP2LOCATION|ipdata|abuseipdb|ipregistry|cloudflare)/i
+    );
+    return {
+      category: 'score',
+      providerOrService: scoreMatch
+        ? scoreMatch[1].toLowerCase().replace('-', '')
+        : undefined,
+      isSupplemental: false,
+    };
+  }
+
+  // Media status
+  if (msg.includes('解锁状态')) {
+    const mediaMatch = msg.match(/^(.*?)\s*解锁状态/);
+    return {
+      category: 'media_status',
+      providerOrService: mediaMatch ? mediaMatch[1].trim().toLowerCase() : undefined,
+      isSupplemental: false,
+    };
+  }
+
+  // Media region
+  if (msg.includes('地区变动')) {
+    const regMatch = msg.match(/^(.*?)\s*地区变动/);
+    return {
+      category: 'media_region',
+      providerOrService: regMatch ? regMatch[1].trim().toLowerCase() : undefined,
+      isSupplemental: false,
+    };
+  }
+
+  // Type
+  if (
+    msg.includes('原生/广播类型') ||
+    msg.includes('使用类型属性变更为') ||
+    msg.includes('公司类型属性变更为')
+  ) {
+    return { category: 'type', isSupplemental: false };
+  }
+
+  // Factor
+  if (msg.includes('新增风险标记') || msg.includes('风险标记解除')) {
+    const factorMatch = msg.match(/检出\s*(\S+)\s*因子/);
+    return {
+      category: 'factor',
+      providerOrService: factorMatch ? factorMatch[1].trim().toLowerCase() : undefined,
+      isSupplemental: false,
+    };
+  }
+
+  return { category: 'unknown', isSupplemental: true };
+}
+
+export interface MergeAlertsResult {
+  merged: IpqaAlert[];
+  semanticCount: number;
+  legacyRawCount: number;
+  deduplicatedCount: number;
+}
+
+/**
+ * Merges primary semantic diff alerts with supplemental legacy alerts.
+ * Semantic diffs take priority; overlapping legacy lines are suppressed.
+ */
+export function mergeAlerts(
+  _nodeUuid: string,
+  semanticAlerts: IpqaAlert[],
+  rawLegacyAlerts: IpqaAlert[]
+): MergeAlertsResult {
+  const semanticCount = semanticAlerts.length;
+  const legacyRawCount = rawLegacyAlerts.length;
+  let deduplicatedCount = 0;
+
+  // Deduplicate semantic alerts by dedupeKey or raw
+  const seenSemantic = new Set<string>();
+  const cleanSemanticAlerts: IpqaAlert[] = [];
+  for (const a of semanticAlerts) {
+    const key = a.dedupeKey || a.raw;
+    if (seenSemantic.has(key)) {
+      deduplicatedCount++;
+      continue;
+    }
+    seenSemantic.add(key);
+    cleanSemanticAlerts.push(a);
+  }
+
+  // Catalog semantic changes for suppression of overlapping legacy alerts
+  const semanticCoverage: Array<{
+    ipVersion: string;
+    category: string;
+    providerOrService?: string;
+  }> = [];
+
+  for (const sa of cleanSemanticAlerts) {
+    if (!sa.dedupeKey) continue;
+    const parts = sa.dedupeKey.split('|');
+    // Format: ${nodeUuid}|${ipVersion}|${category}|${field}|${before}|${after}
+    if (parts.length >= 4) {
+      const ipVersion = parts[1];
+      const category = parts[2];
+      const field = parts[3];
+
+      let normCategory = category;
+      let providerOrService: string | undefined;
+
+      if (category === 'score') {
+        normCategory = 'score';
+        if (field.startsWith('scores.')) {
+          providerOrService = field.slice(7).toLowerCase().replace('-', '');
+        }
+      } else if (category === 'media') {
+        if (field.endsWith('.status')) {
+          normCategory = 'media_status';
+          providerOrService = field.slice(6, -7).toLowerCase();
+        } else if (field.endsWith('.region')) {
+          normCategory = 'media_region';
+          providerOrService = field.slice(6, -7).toLowerCase();
+        }
+      } else if (category === 'type') {
+        normCategory = 'type';
+      } else if (category === 'factor') {
+        normCategory = 'factor';
+        const fParts = field.split('.');
+        if (fParts.length >= 2) {
+          providerOrService = fParts[1].toLowerCase();
+        }
+      }
+
+      semanticCoverage.push({
+        ipVersion,
+        category: normCategory,
+        providerOrService,
+      });
+    }
+  }
+
+  // Process legacy alerts
+  const seenLegacyRaw = new Set<string>();
+  const keptLegacyAlerts: IpqaAlert[] = [];
+
+  for (const la of rawLegacyAlerts) {
+    // 1. Raw deduplication for identical lines
+    if (seenLegacyRaw.has(la.raw)) {
+      deduplicatedCount++;
+      continue;
+    }
+    seenLegacyRaw.add(la.raw);
+
+    // 2. Classify
+    const classified = classifyLegacyAlertForDedupe(la);
+
+    // 3. Supplemental events are never suppressed
+    if (classified.isSupplemental) {
+      keptLegacyAlerts.push(la);
+      continue;
+    }
+
+    // 4. Overlap suppression check
+    const isOverlapped = semanticCoverage.some(sc => {
+      if (sc.ipVersion && la.ipVersion && sc.ipVersion !== la.ipVersion) {
+        return false;
+      }
+      if (sc.category !== classified.category) {
+        return false;
+      }
+      if (classified.providerOrService && sc.providerOrService) {
+        return (
+          sc.providerOrService.includes(classified.providerOrService) ||
+          classified.providerOrService.includes(sc.providerOrService)
+        );
+      }
+      return true;
+    });
+
+    if (isOverlapped) {
+      deduplicatedCount++;
+    } else {
+      keptLegacyAlerts.push(la);
+    }
+  }
+
+  const merged = [...cleanSemanticAlerts, ...keptLegacyAlerts];
+  return {
+    merged,
+    semanticCount,
+    legacyRawCount,
+    deduplicatedCount,
+  };
+}
+
+export interface FilterAlertsResult {
+  alerts: IpqaAlert[];
+  kept: number;
+  below_severity: number;
+  ignored_initial: number;
+}
+
+/**
+ * Unified severity and initial archive filtering helper.
+ */
+export function filterAlerts(
+  alerts: IpqaAlert[],
+  config: PluginConfig
+): FilterAlertsResult {
+  const minRank = getSeverityRank(config.min_severity);
+  let below_severity = 0;
+  let ignored_initial = 0;
+  const result: IpqaAlert[] = [];
+
+  for (const alert of alerts) {
+    if (
+      config.ignore_initial_archive &&
+      alert.message.includes('首次完成数据存档监测')
+    ) {
+      ignored_initial++;
+      continue;
+    }
+
+    if (getSeverityRank(alert.level) < minRank) {
+      below_severity++;
+      continue;
+    }
+
+    result.push(alert);
+  }
+
+  // Sort by severity rank descending (CRITICAL -> WARNING -> INFO), then timestamp ascending
+  result.sort((a, b) => {
+    const rankDiff = getSeverityRank(b.level) - getSeverityRank(a.level);
+    if (rankDiff !== 0) return rankDiff;
+    return a.timestamp.localeCompare(b.timestamp);
+  });
+
+  return {
+    alerts: result,
+    kept: result.length,
+    below_severity,
+    ignored_initial,
+  };
+}
+
 /**
  * Parses and filters node task results according to protocol and configuration.
  * Error isolation: Each node is parsed independently without throwing.
@@ -157,9 +434,8 @@ export function parseNodeResult(
 
   // Parse remaining lines
   const rawAlertLines = lines.slice(1);
-  const minRank = getSeverityRank(config.min_severity);
+  const rawLegacyAlerts: IpqaAlert[] = [];
   const seenRaw = new Set<string>();
-  const alerts: IpqaAlert[] = [];
 
   for (const line of rawAlertLines) {
     if (!line.trim()) continue;
@@ -170,37 +446,18 @@ export function parseNodeResult(
       continue;
     }
 
-    // 1. Ignore initial archive if enabled
-    if (
-      config.ignore_initial_archive &&
-      alert.message.includes('首次完成数据存档监测')
-    ) {
-      continue;
-    }
-
-    // 2. Filter by minimum severity
-    if (getSeverityRank(alert.level) < minRank) {
-      continue;
-    }
-
-    // 3. Deduplicate identical raw lines within the same node
     if (seenRaw.has(alert.raw)) {
       continue;
     }
     seenRaw.add(alert.raw);
-
-    alerts.push(alert);
+    alert.source = 'alerts_log';
+    rawLegacyAlerts.push(alert);
   }
 
-  // Sort by severity rank descending (CRITICAL -> WARNING -> INFO), then timestamp ascending
-  alerts.sort((a, b) => {
-    const rankDiff = getSeverityRank(b.level) - getSeverityRank(a.level);
-    if (rankDiff !== 0) return rankDiff;
-    return a.timestamp.localeCompare(b.timestamp);
-  });
+  const filterRes = filterAlerts(rawLegacyAlerts, config);
 
   console.log(
-    `[IPQA] ${node.name}: OK, raw=${rawAlertLines.length}, filtered=${alerts.length}`
+    `[IPQA] ${node.name}: OK, raw=${rawAlertLines.length}, filtered=${filterRes.alerts.length}`
   );
 
   return {
@@ -208,6 +465,6 @@ export function parseNodeResult(
     name: node.name,
     weight: node.weight,
     status: 'OK',
-    alerts,
+    alerts: filterRes.alerts,
   };
 }

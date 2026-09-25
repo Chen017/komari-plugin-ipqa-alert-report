@@ -1,8 +1,7 @@
 import { loadConfig } from './config.ts';
-import { parseNodeResult } from './ipqa.ts';
+import { collectDailyNodeResults } from './collection.ts';
 import { fetchAllNodes, resolveTargetNodes } from './nodes.ts';
 import { sendNotification } from './notify.ts';
-import { buildIpqaReadCommand, runRemoteTask } from './remote.ts';
 import {
   buildDailyReport,
   renderReport,
@@ -82,19 +81,14 @@ export async function runDailyReport(server: ServerContext, now = new Date()): P
     const { startEpoch, endEpoch, windowStart, windowEnd } =
       getBeijingDailyWindow(dateKey);
 
-    const command = buildIpqaReadCommand(startEpoch, endEpoch);
-    const targetUuids = targets.map(n => n.uuid);
-
-    const { taskId, results } = await runRemoteTask(
+    const nodeResults = await collectDailyNodeResults({
       server,
-      command,
-      targetUuids,
-      30_000
-    );
-
-    const nodeResults = targets.map(node =>
-      parseNodeResult(node, results.get(node.uuid), config)
-    );
+      targets,
+      config,
+      dateKey,
+      startEpoch,
+      endEpoch,
+    });
 
     const report = buildDailyReport({
       dateKey,
@@ -117,7 +111,6 @@ export async function runDailyReport(server: ServerContext, now = new Date()): P
     // Persist completed state
     state.last_run_beijing_date = dateKey;
     state.last_success_at = new Date().toISOString();
-    state.last_task_id = taskId;
     state.attempt_date = dateKey;
     state.attempt_count = 0;
     state.last_summary = {
@@ -148,9 +141,9 @@ export async function runDailyReport(server: ServerContext, now = new Date()): P
 export async function schedulerTick(server: ServerContext, now = new Date()): Promise<void> {
   const bj = getBeijingParts(now);
 
-  // 1. Daily archive sync retry window: 04:10–05:30 Asia/Shanghai, every 5 minutes (Section 5)
+  // 1. Daily archive sync retry window: 04:10–04:59 Asia/Shanghai, every 5 minutes (Section 13)
   const isInDailySyncWindow =
-    (bj.hour === 4 && bj.minute >= 10) || (bj.hour === 5 && bj.minute <= 30);
+    bj.hour === 4 && bj.minute >= 10;
   if (isInDailySyncWindow && bj.minute % 5 === 0) {
     try {
       const config = await loadConfig(server);
@@ -194,5 +187,5 @@ export function registerScheduler(server: ServerContext): void {
       console.error('[IPQA] Scheduled run encountered error:', err);
     }
   });
-  console.log('[IPQA] Scheduler registered: checking every minute for Beijing 04:10-05:30 sync and 07:00 report windows');
+  console.log('[IPQA] Scheduler registered: checking every minute for Beijing 04:10-04:59 sync and 07:00 report windows');
 }

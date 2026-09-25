@@ -1,8 +1,7 @@
 import { loadConfig } from './config.ts';
-import { parseNodeResult } from './ipqa.ts';
+import { collectDailyNodeResults } from './collection.ts';
 import { fetchAllNodes, resolveTargetNodes } from './nodes.ts';
 import { sendNotification } from './notify.ts';
-import { buildIpqaReadCommand, runRemoteTask } from './remote.ts';
 import {
   buildDailyReport,
   renderReport,
@@ -168,19 +167,20 @@ export async function runTestReport(
   );
   console.log(`[IPQA-TEST] Query window: ${windowStart} -> ${windowEnd}`);
 
-  const command = buildIpqaReadCommand(startEpoch, endEpoch);
-  const targetUuids = targets.map(n => n.uuid);
+  const dateKeys =
+    options.window === 'last_24h'
+      ? [formatBeijingDateKey(getBeijingParts(new Date(startEpoch * 1000))), dateKey]
+      : [dateKey];
 
-  const { results } = await runRemoteTask(
+  const nodeResults: NodeCollectionResult[] = await collectDailyNodeResults({
     server,
-    command,
-    targetUuids,
-    30_000
-  );
-
-  const nodeResults: NodeCollectionResult[] = targets.map(node =>
-    parseNodeResult(node, results.get(node.uuid), config)
-  );
+    targets,
+    config,
+    dateKey,
+    startEpoch,
+    endEpoch,
+    dateKeys: Array.from(new Set(dateKeys)),
+  });
 
   const report = buildDailyReport({
     dateKey,

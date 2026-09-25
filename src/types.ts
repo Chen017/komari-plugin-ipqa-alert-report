@@ -24,6 +24,8 @@ export interface IpqaAlert {
   message: string;
   ipVersion: string;
   raw: string;
+  source?: 'archive_diff' | 'alerts_log';
+  dedupeKey?: string;
 }
 
 export type NodeCollectionStatus =
