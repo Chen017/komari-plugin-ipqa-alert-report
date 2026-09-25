@@ -58,7 +58,13 @@ export interface DailyReport {
 }
 
 export interface NodeSyncState {
-  status: 'current' | 'failed' | 'not_installed' | 'no_archive';
+  status:
+    | 'current'
+    | 'pending_today'
+    | 'stale'
+    | 'failed'
+    | 'not_installed'
+    | 'no_archive';
   latest_date: string | null;
   attempts: number;
   last_attempt_at: string;

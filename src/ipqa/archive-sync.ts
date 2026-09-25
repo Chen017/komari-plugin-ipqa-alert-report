@@ -39,13 +39,56 @@ export interface SyncOptions {
 export interface NodeSyncResult {
   uuid: string;
   name: string;
-  status: 'updated' | 'already_current' | 'not_installed' | 'offline' | 'failed';
+  status:
+    | 'updated'
+    | 'already_current'
+    | 'pending_today'
+    | 'stale'
+    | 'no_archive'
+    | 'not_installed'
+    | 'offline'
+    | 'failed';
   previousLatestDate?: string | null;
   latestDate?: string | null;
   fetchedArchives: number;
   canonicalDaysUpdated: string[];
   error?: string;
   overview?: IpqaNodeOverview;
+}
+
+/**
+ * Maps freshness calculation to NodeSyncResult status when no archive update occurred.
+ */
+export function determineNoUpdateStatus(
+  latestDate: string | null,
+  now: Date
+): NodeSyncResult['status'] {
+  if (!latestDate) {
+    return 'no_archive';
+  }
+  const freshness = calculateFreshness({
+    now,
+    latestDate,
+    hasArchives: true,
+    isInstalled: true,
+  });
+  switch (freshness.status) {
+    case 'fresh':
+      return 'already_current';
+    case 'pending_today':
+      return 'pending_today';
+    case 'stale':
+    case 'future_date':
+      return 'stale';
+    case 'no_archive':
+      return 'no_archive';
+    case 'not_installed':
+      return 'not_installed';
+    case 'sync_error':
+      return 'failed';
+    default:
+      return 'stale';
+  }
 }
 
 export interface ArchiveSyncResult {
@@ -172,7 +215,7 @@ export async function syncNodeArchives(
       return {
         uuid: node.uuid,
         name: node.name,
-        status: 'already_current',
+        status: determineNoUpdateStatus(previousLatestDate, now),
         previousLatestDate,
         latestDate: previousLatestDate,
         fetchedArchives: 0,
@@ -219,9 +262,10 @@ export async function syncNodeArchives(
     const latestDate = updatedLatest?.date ?? null;
     const overview = buildNodeOverview(node, null, now);
 
-    const status: NodeSyncResult['status'] = fetchedCount > 0 || latestDate !== previousLatestDate
-      ? 'updated'
-      : 'already_current';
+    const status: NodeSyncResult['status'] =
+      fetchedCount > 0 || (latestDate !== null && latestDate !== previousLatestDate)
+        ? 'updated'
+        : determineNoUpdateStatus(latestDate, now);
 
     return {
       uuid: node.uuid,
@@ -359,32 +403,56 @@ export async function syncIpqaArchives(
     }
 
     const attempts = (nodeState?.attempts ?? 0) + 1;
-    if (res.status === 'updated' || res.status === 'already_current') {
-      const isToday = res.latestDate === todayDate;
-      state.archive_sync.nodes[node.uuid] = {
-        status: isToday ? 'current' : 'current',
-        latest_date: res.latestDate ?? null,
-        attempts,
-        last_attempt_at: new Date().toISOString(),
-        last_success_at: new Date().toISOString(),
-        error: null,
-      };
-      if (res.status === 'updated') {
-        console.log(
-          `[IPQA-SYNC] ${node.name} updated: ${res.previousLatestDate ?? 'none'} -> ${res.latestDate ?? 'none'} (fetched=${res.fetchedArchives})`
-        );
-      } else {
-        console.log(`[IPQA-SYNC] ${node.name} already current`);
-      }
-    } else {
+    const nowIso = new Date().toISOString();
+
+    if (res.status === 'failed') {
       state.archive_sync.nodes[node.uuid] = {
         status: 'failed',
         latest_date: res.latestDate ?? null,
         attempts,
-        last_attempt_at: new Date().toISOString(),
+        last_attempt_at: nowIso,
         error: res.error ?? 'Unknown error',
       };
       console.warn(`[IPQA-SYNC] ${node.name} failed: ${res.error ?? 'Unknown error'}`);
+    } else {
+      let stateStatus: 'current' | 'pending_today' | 'stale' | 'failed' | 'not_installed' | 'no_archive' = 'current';
+      if (res.status === 'updated') {
+        const noUpdate = determineNoUpdateStatus(res.latestDate ?? null, now);
+        stateStatus = noUpdate === 'pending_today' ? 'pending_today' : (noUpdate === 'stale' ? 'stale' : 'current');
+      } else if (res.status === 'already_current') {
+        stateStatus = 'current';
+      } else if (res.status === 'pending_today') {
+        stateStatus = 'pending_today';
+      } else if (res.status === 'stale') {
+        stateStatus = 'stale';
+      } else if (res.status === 'no_archive') {
+        stateStatus = 'no_archive';
+      } else if (res.status === 'not_installed') {
+        stateStatus = 'not_installed';
+      }
+
+      state.archive_sync.nodes[node.uuid] = {
+        status: stateStatus,
+        latest_date: res.latestDate ?? null,
+        attempts,
+        last_attempt_at: nowIso,
+        last_success_at: nowIso,
+        error: null,
+      };
+
+      if (res.status === 'updated') {
+        console.log(
+          `[IPQA-SYNC] ${node.name} updated: ${res.previousLatestDate ?? 'none'} -> ${res.latestDate ?? 'none'} (fetched=${res.fetchedArchives})`
+        );
+      } else if (res.status === 'already_current') {
+        console.log(`[IPQA-SYNC] ${node.name} already current for ${todayDate}`);
+      } else if (res.status === 'pending_today') {
+        console.log(`[IPQA-SYNC] ${node.name} pending_today: latest=${res.latestDate ?? 'none'} expected=${todayDate}`);
+      } else if (res.status === 'stale') {
+        console.log(`[IPQA-SYNC] ${node.name} stale: latest=${res.latestDate ?? 'none'} expected=${todayDate}`);
+      } else if (res.status === 'no_archive') {
+        console.log(`[IPQA-SYNC] ${node.name} no_archive: expected=${todayDate}`);
+      }
     }
   }
 
@@ -408,6 +476,8 @@ export async function syncIpqaArchives(
 
   const updatedCount = nodeResults.filter(n => n.status === 'updated').length;
   const currentCount = nodeResults.filter(n => n.status === 'already_current').length;
+  const pendingCount = nodeResults.filter(n => n.status === 'pending_today').length;
+  const staleCount = nodeResults.filter(n => n.status === 'stale').length;
   const failedCount = nodeResults.filter(n => n.status === 'failed').length;
 
   if (failedCount === 0) {
@@ -417,7 +487,7 @@ export async function syncIpqaArchives(
 
   const finishedAt = new Date().toISOString();
   console.log(
-    `[IPQA-SYNC] finish reason=${options.reason} updated=${updatedCount} current=${currentCount} failed=${failedCount}`
+    `[IPQA-SYNC] finish reason=${options.reason} updated=${updatedCount} current=${currentCount} pending=${pendingCount} stale=${staleCount} failed=${failedCount}`
   );
 
   return {
