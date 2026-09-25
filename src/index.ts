@@ -35,8 +35,9 @@ export async function load(): Promise<void> {
       // @ts-expect-error runtime require
       serverInstance = require('server');
     } catch (e) {
-      console.error('[IPQA] Failed to acquire Komari server module:', e);
-      return;
+      throw new Error(
+        `Failed to acquire Komari server module: ${e instanceof Error ? e.message : String(e)}`
+      );
     }
   }
 
