@@ -117,7 +117,7 @@ export function classifyLegacyAlertForDedupe(alert: IpqaAlert): ClassifiedLegacy
   }
 
   if (msg.includes('DNS 黑名单') || msg.includes('DNSBL')) {
-    return { category: 'dnsbl', isSupplemental: true };
+    return { category: 'dnsbl', isSupplemental: false };
   }
 
   // Score
@@ -333,6 +333,9 @@ export function mergeAlerts(
           sc.factorName === classified.factorName &&
           sc.factorEngine === classified.factorEngine
         );
+      }
+      if (classified.category === 'dnsbl') {
+        return true;
       }
       if (classified.providerOrService && sc.providerOrService) {
         return sc.providerOrService === classified.providerOrService;
