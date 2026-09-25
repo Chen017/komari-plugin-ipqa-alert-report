@@ -136,6 +136,7 @@ export async function collectDailyNodeResults(
         weight: node.weight,
         status: 'OK',
         alerts: filterRes.alerts,
+        semanticAvailable: true,
       });
       continue;
     }
@@ -150,6 +151,7 @@ export async function collectDailyNodeResults(
         status: legacy.status,
         alerts: [],
         error: legacy.error,
+        semanticAvailable: false,
       });
       continue;
     }
@@ -167,6 +169,7 @@ export async function collectDailyNodeResults(
       weight: node.weight,
       status: 'OK',
       alerts: filterRes.alerts,
+      semanticAvailable: false,
     });
   }
 

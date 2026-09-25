@@ -933,4 +933,79 @@ describe('Alert Unification & Stale Node Regression Test Suite', () => {
     const res = await runTestReport(server, { window: 'today_0700' }, new Date('2026-09-25T12:00:00Z'));
     assert.strictEqual(res.alertCount, 2);
   });
+
+  // T33 — one paused node must not suppress late semantic alerts from other nodes
+  it('T33: paused Zouter does not suppress late DataWave/Vmiss semantic alerts during catch-up window', async () => {
+    const datawave = makeNode({ uuid: 'dw-late', name: 'DataWave' });
+    const vmiss = makeNode({ uuid: 'vm-late', name: 'Vmiss' });
+    const zouter = makeNode({ uuid: 'zo-paused', name: 'Zouter' });
+
+    const taskResults = [
+      { client_id: datawave.uuid, status: 'completed', stdout: '__IPQA_STATUS__|OK\n' },
+      { client_id: vmiss.uuid, status: 'completed', stdout: '__IPQA_STATUS__|OK\n' },
+      { client_id: zouter.uuid, status: 'completed', stdout: '__IPQA_STATUS__|OK\n' },
+    ];
+
+    const messages = [];
+    const server = makeMockServer({
+      nodes: [datawave, vmiss, zouter],
+      taskResults,
+      onNotification: (p) => {
+        messages.push(p?.event?.message || p?.message || '');
+      },
+    });
+
+    // 07:00 — none of the three nodes has today's semantic archive yet.
+    await runDailyReport(server, new Date('2026-09-24T23:00:00Z'));
+    assert.strictEqual(messages.length, 0);
+    assert.strictEqual(
+      loadState().last_run_beijing_date,
+      '',
+      'Day must remain open while selected nodes are still missing today semantic data'
+    );
+
+    // 07:01 — DataWave arrives; Zouter remains intentionally paused.
+    seedDailyReport(datawave.uuid, {
+      date: '2026-09-25',
+      changes: [
+        makeSemanticChange({
+          nodeUuid: datawave.uuid,
+          date: '2026-09-25',
+          description: 'DataWave late risk change',
+        }),
+      ],
+    });
+    await runDailyReport(server, new Date('2026-09-24T23:01:00Z'));
+    assert.strictEqual(messages.length, 1);
+    assert.ok(messages[0].includes('DataWave'));
+    assert.ok(messages[0].includes('DataWave late risk change'));
+    assert.ok(!messages[0].includes('Vmiss'));
+
+    // 07:02 — Vmiss arrives. DataWave must not be sent again.
+    seedDailyReport(vmiss.uuid, {
+      date: '2026-09-25',
+      changes: [
+        makeSemanticChange({
+          nodeUuid: vmiss.uuid,
+          date: '2026-09-25',
+          description: 'Vmiss late risk change',
+        }),
+      ],
+    });
+    await runDailyReport(server, new Date('2026-09-24T23:02:00Z'));
+    assert.strictEqual(messages.length, 2);
+    assert.ok(messages[1].includes('Vmiss'));
+    assert.ok(messages[1].includes('Vmiss late risk change'));
+    assert.ok(!messages[1].includes('DataWave late risk change'));
+
+    // Repeating the same snapshot must stay silent even though Zouter is still stale.
+    await runDailyReport(server, new Date('2026-09-24T23:03:00Z'));
+    assert.strictEqual(messages.length, 2, 'Catch-up retries must be idempotent');
+
+    // Final minute closes the day even if the intentionally paused node never updates.
+    await runDailyReport(server, new Date('2026-09-24T23:09:00Z'));
+    assert.strictEqual(messages.length, 2);
+    assert.strictEqual(loadState().last_run_beijing_date, '2026-09-25');
+  });
+
 });
