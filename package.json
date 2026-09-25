@@ -1,6 +1,6 @@
 {
   "name": "komari-plugin-ipqa-alert-report",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "对于安装了开源项目 IP-Quality-Archive 的 VPS，通过 Komari 通知渠道发送 IP 质量的告警通知。",
   "type": "module",
   "scripts": {

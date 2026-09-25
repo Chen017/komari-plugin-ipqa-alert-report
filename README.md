@@ -34,23 +34,34 @@
 ## 工作流程
 
 ```text
-[各 VPS 节点] 04:00 自动执行 IPQA 检测
-       │
-       ▼ (结果记录至 ~/.ipqa/data/alerts.log 及 data/{v4,v6}/*.json)
-       │
-[Komari Server 插件] 07:00 (Asia/Shanghai) 定时调度触发
-       │
-       ├─► 过滤选定节点 (支持全部节点或指定节点列表)
-       ├─► 增量同步最新的归档文件清单并拉取缺失文件
-       ├─► 规范化归档为每日配对数据并持久化到本地存储
-       ├─► 运行语义差异引擎，记录并更新跨天变更记录
-       ├─► 并发远程读取 alerts.log 告警日志并完成时区窗口换算
-       ├─► 级别过滤 (按 min_severity 与 ignore_initial_archive 规则)
-       │
-       ├─► [全节点无告警且正常] ──► 保持静默，更新状态
-       │
-       └─► [存在告警或采集异常] ──► 渲染报告正文 ──► 调用 Komari Notification 推送 (Telegram)
+[各 VPS]
+   ├─ archive JSON (data/{v4,v6}/*.json)
+   └─ alerts.log (变动日志)
+         │
+         ▼
+[Komari plugin]
+   ├─ 自动增量同步 archive 归档
+   ├─ 运行语义差异引擎 (compareDailyReports) 生成核心语义变化
+   ├─ 并发读取 alerts.log 补充事件 (如期望地区不符、DNSBL 增量等)
+   ├─ 双来源智能合并与重叠事件抑制 (dedupe)
+   ├─ 统一严重级别过滤 (min_severity & ignore_initial_archive)
+   └─ 生成汇总报告推送到 Telegram (或在无告警时完全静默)
 ```
+
+### 数据源架构说明
+
+- **Archive Semantic Diff（核心事实来源）**：
+  Telegram 告警的核心变化来源，与 Emerald Insights 消费完全相同的数据基准。每日通过规范化对比前后两日配对归档，生成精确的评分跳变、解锁升降级与身份因子变动。
+- **Alerts.log（补充与兼容来源）**：
+  作为 supplemental / fallback 来源，保留 IPQA 本地检测产生的特定补充事件（例如 `EXPECTED_YOUTUBE_REGION` / `EXPECTED_NETFLIX_REGION` 地区不符合预期、DNS 黑名单拦截数增加等）；当归档已覆盖同一事件时自动进行去重抑制。在关闭归档同步（`sync_archives=false`）时，系统自动无缝回退至纯 alerts.log 模式。
+
+### 状态与归档新鲜度 (Freshness)
+
+插件严格区分**数据归档新鲜度**与**采集执行故障**：
+- `current`：已同步并就绪的当天归档。
+- `pending_today`：北京时间 04:00–05:00 宽限期内，等待当天 04:00 IPQA 巡检归档生成。
+- `stale`：05:00 宽限期后仍未获取到当天最新归档（例如节点暂停了 IPQA 每日定时检测）。**`stale` 仅代表归档数据的新鲜度状态，绝不视为节点通信异常或网络故障，也不会阻止其他正常节点的告警报告发送。**
+- `failed`：仅在 Agent 通信超时、RPC 执行失败、远程命令异常等真正采集故障时触发。
 
 ---
 

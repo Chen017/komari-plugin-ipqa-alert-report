@@ -137,7 +137,7 @@ export async function runPhase0PoC(server: ServerContext): Promise<boolean> {
  * Plugin lifecycle: load()
  */
 export async function load(): Promise<void> {
-  console.log('[IPQA] Loading IPQA Alert Report plugin v0.2.0...');
+  console.log('[IPQA] Loading IPQA Alert Report plugin v0.2.1...');
 
   if (!serverInstance) {
     try {

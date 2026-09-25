@@ -42,7 +42,7 @@ test('api routes: registration and read-only cache endpoints', async () => {
     assert.strictEqual(res.statusCode, 200);
     const data = JSON.parse(res.body);
     assert.strictEqual(data.schema_version, 1);
-    assert.strictEqual(data.plugin_version, '0.2.0');
+    assert.strictEqual(data.plugin_version, '0.2.1');
     assert.strictEqual(data.archive_api, true);
     assert.strictEqual(data.change_api, true);
   }

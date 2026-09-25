@@ -6,7 +6,7 @@ import {
   listDailyDates,
 } from '../storage/archive-store.ts';
 
-const PLUGIN_VERSION = '0.2.0';
+const PLUGIN_VERSION = '0.2.1';
 const API_PREFIX = '/api/plugin/ipqa-alert-report/v1';
 
 function parseUrl(urlStr: string): { pathname: string; query: Record<string, string> } {
