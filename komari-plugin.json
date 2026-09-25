@@ -1,5 +1,5 @@
 {
-  "$schema": "./node_modules/@komari-monitor/plugin-sdk/schema/komari-plugin.schema.json",
+  "$schema": "https://komari-monitor.github.io/plugin-sdk/komari-plugin.schema.json",
   "name": {
     "zh-CN": "IPQA 告警报告",
     "zh_CN": "IPQA 告警报告",
