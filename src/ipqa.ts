@@ -334,61 +334,62 @@ export function filterAlerts(
   };
 }
 
+export interface LegacyParseResult {
+  status: NodeCollectionStatus;
+  alerts: IpqaAlert[];
+  error?: string;
+  rawCount: number;
+  malformedCount: number;
+}
+
 /**
- * Parses and filters node task results according to protocol and configuration.
- * Error isolation: Each node is parsed independently without throwing.
+ * Parses remote task execution output for alerts.log.
+ * Extracts status headers, validates protocol, and parses raw alert lines.
  */
-export function parseNodeResult(
-  node: KomariNode,
-  taskResult: TaskExecResult | undefined,
-  config: PluginConfig
-): NodeCollectionResult {
+export function parseLegacyTaskResult(
+  taskResult: TaskExecResult | undefined
+): LegacyParseResult {
   if (!taskResult) {
-    console.log(`[IPQA] ${node.name}: TIMEOUT`);
     return {
-      uuid: node.uuid,
-      name: node.name,
-      weight: node.weight,
       status: 'TIMEOUT',
       alerts: [],
       error: 'No result returned from agent',
+      rawCount: 0,
+      malformedCount: 0,
     };
   }
 
   if (taskResult.status === 'TIMEOUT') {
-    console.log(`[IPQA] ${node.name}: TIMEOUT`);
     return {
-      uuid: node.uuid,
-      name: node.name,
-      weight: node.weight,
       status: 'TIMEOUT',
       alerts: [],
       error: taskResult.error || 'Agent task timeout',
+      rawCount: 0,
+      malformedCount: 0,
     };
   }
 
   if (taskResult.exit_code !== undefined && taskResult.exit_code !== 0 && !taskResult.stdout) {
-    console.log(`[IPQA] ${node.name}: EXEC_FAILED`);
     return {
-      uuid: node.uuid,
-      name: node.name,
-      weight: node.weight,
       status: 'EXEC_FAILED',
       alerts: [],
-      error: taskResult.error || taskResult.stderr || `Command exited with code ${taskResult.exit_code}`,
+      error:
+        taskResult.error ||
+        taskResult.stderr ||
+        `Command exited with code ${taskResult.exit_code}`,
+      rawCount: 0,
+      malformedCount: 0,
     };
   }
 
   const stdout = (taskResult.stdout || '').trim();
   if (!stdout) {
-    console.log(`[IPQA] ${node.name}: PARSE_FAILED`);
     return {
-      uuid: node.uuid,
-      name: node.name,
-      weight: node.weight,
       status: 'PARSE_FAILED',
       alerts: [],
       error: 'Empty stdout without status header',
+      rawCount: 0,
+      malformedCount: 0,
     };
   }
 
@@ -421,28 +422,26 @@ export function parseNodeResult(
   }
 
   if (status !== 'OK') {
-    console.log(`[IPQA] ${node.name}: ${status}`);
     return {
-      uuid: node.uuid,
-      name: node.name,
-      weight: node.weight,
       status,
       alerts: [],
       error: errorMsg,
+      rawCount: 0,
+      malformedCount: 0,
     };
   }
 
-  // Parse remaining lines
   const rawAlertLines = lines.slice(1);
-  const rawLegacyAlerts: IpqaAlert[] = [];
+  const alerts: IpqaAlert[] = [];
   const seenRaw = new Set<string>();
+  let malformedCount = 0;
 
   for (const line of rawAlertLines) {
     if (!line.trim()) continue;
 
     const alert = parseAlertLine(line);
     if (!alert) {
-      console.warn(`[IPQA] ${node.name}: Malformed alert line: "${line}"`);
+      malformedCount++;
       continue;
     }
 
@@ -451,13 +450,48 @@ export function parseNodeResult(
     }
     seenRaw.add(alert.raw);
     alert.source = 'alerts_log';
-    rawLegacyAlerts.push(alert);
+    alerts.push(alert);
   }
 
-  const filterRes = filterAlerts(rawLegacyAlerts, config);
+  return {
+    status: 'OK',
+    alerts,
+    rawCount: rawAlertLines.filter(l => l.trim().length > 0).length,
+    malformedCount,
+  };
+}
+
+/**
+ * Parses and filters node task results according to protocol and configuration.
+ * Error isolation: Each node is parsed independently without throwing.
+ */
+export function parseNodeResult(
+  node: KomariNode,
+  taskResult: TaskExecResult | undefined,
+  config: PluginConfig
+): NodeCollectionResult {
+  const legacy = parseLegacyTaskResult(taskResult);
+
+  if (legacy.status !== 'OK') {
+    console.log(`[IPQA] ${node.name}: ${legacy.status}`);
+    return {
+      uuid: node.uuid,
+      name: node.name,
+      weight: node.weight,
+      status: legacy.status,
+      alerts: [],
+      error: legacy.error,
+    };
+  }
+
+  if (legacy.malformedCount > 0) {
+    console.warn(`[IPQA] ${node.name}: ${legacy.malformedCount} malformed alert line(s)`);
+  }
+
+  const filterRes = filterAlerts(legacy.alerts, config);
 
   console.log(
-    `[IPQA] ${node.name}: OK, raw=${rawAlertLines.length}, filtered=${filterRes.alerts.length}`
+    `[IPQA] ${node.name}: OK, raw=${legacy.rawCount}, filtered=${filterRes.alerts.length}`
   );
 
   return {
