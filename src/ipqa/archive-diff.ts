@@ -159,9 +159,19 @@ function compareSingleVersion(
   }
 
   // 6. DNS blacklist count
-  const prevBlacklist = Number((prev.mail as any)?.DNSBlacklist?.Blacklisted);
-  const currBlacklist = Number((curr.mail as any)?.DNSBlacklist?.Blacklisted);
+  const prevBlacklistRaw = (prev.mail as any)?.DNSBlacklist?.Blacklisted;
+  const currBlacklistRaw = (curr.mail as any)?.DNSBlacklist?.Blacklisted;
+  const prevBlacklist =
+    prevBlacklistRaw === null || prevBlacklistRaw === undefined || prevBlacklistRaw === ''
+      ? null
+      : Number(prevBlacklistRaw);
+  const currBlacklist =
+    currBlacklistRaw === null || currBlacklistRaw === undefined || currBlacklistRaw === ''
+      ? null
+      : Number(currBlacklistRaw);
   if (
+    prevBlacklist !== null &&
+    currBlacklist !== null &&
     Number.isFinite(prevBlacklist) &&
     Number.isFinite(currBlacklist) &&
     prevBlacklist !== currBlacklist
