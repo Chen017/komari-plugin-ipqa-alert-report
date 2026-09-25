@@ -1,5 +1,3 @@
-import { fetchAllNodes, resolveTargetNodes } from './nodes.ts';
-import { runRemoteTask } from './remote.ts';
 import { registerScheduler, type ServerContext } from './scheduler.ts';
 import { runTestReport } from './test.ts';
 import { registerApiRoutes } from './api/routes.ts';
@@ -17,15 +15,6 @@ try {
   serverInstance = typeof server !== 'undefined' ? server : null;
 }
 
-const REQUIRED_RPCS = [
-  'common:getNodes',
-  'admin:exec',
-  'admin:getTaskResultsByTaskId',
-  'admin:sendNotification',
-];
-
-let isCompatible = true;
-
 export function isAdminPrincipal(principal: any): boolean {
   return Boolean(
     principal &&
@@ -33,112 +22,6 @@ export function isAdminPrincipal(principal: any): boolean {
         principal.type === 'api_key' ||
         principal.is_api_key === true)
   );
-}
-
-/**
- * Validates RPC runtime compatibility on plugin load (Section 33).
- * If a required RPC is missing, sets isCompatible = false and logs clearly.
- */
-export async function checkCompatibility(server: ServerContext): Promise<boolean> {
-  let allPresent = true;
-
-  // @ts-expect-error optional rpc check
-  if (server.rpc && typeof server.rpc.has === 'function') {
-    for (const rpc of REQUIRED_RPCS) {
-      // @ts-expect-error optional rpc check
-      const hasRpc = await server.rpc.has(rpc);
-      if (!hasRpc) {
-        allPresent = false;
-        console.warn(
-          `[IPQA] CRITICAL WARNING: Required RPC method "${rpc}" is not available in this Komari runtime!`
-        );
-      }
-    }
-  } else {
-    if (typeof server.call !== 'function') {
-      allPresent = false;
-      console.error(
-        '[IPQA] CRITICAL: server.call is not available! allowSystemRPC permission might be missing.'
-      );
-    }
-  }
-
-  isCompatible = allPresent;
-  return allPresent;
-}
-
-/**
- * Phase 0 Compatibility PoC (Section 11 & Section 39).
- * Verifies that server.call("admin:exec") executes without 2FA interception.
- * Logs desensitized TaskResult structure (Section 10.3).
- */
-export async function runPhase0PoC(server: ServerContext): Promise<boolean> {
-  console.log('[IPQA] Running Phase 0 compatibility PoC...');
-  try {
-    const allNodes = await fetchAllNodes(server);
-    if (allNodes.length === 0) {
-      console.log('[IPQA] Phase 0 PoC: No nodes currently available in Komari, deferring check.');
-      return true;
-    }
-
-    const testNode = allNodes[0];
-    console.log(
-      `[IPQA] Phase 0 PoC: testing admin:exec on node "${testNode.name}" (${testNode.uuid})...`
-    );
-
-    const { results } = await runRemoteTask(
-      server,
-      "printf 'IPQA_PLUGIN_POC\\n'",
-      [testNode.uuid],
-      15_000,
-      1_000
-    );
-
-    const res = results.get(testNode.uuid);
-    // Section 10.3: 输出一次脱敏后的 TaskResult 结构到插件日志
-    if (res) {
-      console.log(
-        `[IPQA] Phase 0 TaskResult structure: status=${res.status}, exit_code=${res.exit_code}, has_stdout=${Boolean(
-          res.stdout
-        )}, has_stderr=${Boolean(res.stderr)}`
-      );
-    }
-
-    if (!res) {
-      console.warn('[IPQA] Phase 0 PoC: no TaskResult returned.');
-      return false;
-    }
-
-    if (res.status === 'TIMEOUT') {
-      console.warn(`[IPQA] Phase 0 PoC: task timed out: ${res.error || ''}`);
-      return false;
-    }
-
-    if (typeof res.exit_code === 'number' && res.exit_code !== 0) {
-      console.warn(
-        `[IPQA] Phase 0 PoC: remote command failed with exit_code=${res.exit_code}, output="${(res.stdout || '').slice(0, 200)}"`
-      );
-      return false;
-    }
-
-    const stdout = (res.stdout || '').trim();
-
-    if (!stdout.includes('IPQA_PLUGIN_POC')) {
-      console.warn(
-        `[IPQA] Phase 0 PoC: command completed but marker was missing. output="${stdout.slice(0, 200)}"`
-      );
-      return false;
-    }
-
-    console.log(
-      '[IPQA] Phase 0 PoC PASSED: admin:exec and TaskResult polling are working.'
-    );
-
-    return true;
-  } catch (err) {
-    console.error('[IPQA] Phase 0 PoC FAILED during remote execution:', err);
-    return false;
-  }
 }
 
 /**
@@ -152,25 +35,10 @@ export async function load(): Promise<void> {
       // @ts-expect-error runtime require
       serverInstance = require('server');
     } catch (e) {
-      console.error('[IPQA] Failed to acquire Komari server module:', e);
-      return;
+      throw new Error(
+        `Failed to acquire Komari server module: ${e instanceof Error ? e.message : String(e)}`
+      );
     }
-  }
-
-  const rpcOk = await checkCompatibility(serverInstance);
-  if (!rpcOk) {
-    console.error(
-      '[IPQA] Missing critical RPC methods. Daily report will not be scheduled for today.'
-    );
-    return;
-  }
-
-  const pocOk = await runPhase0PoC(serverInstance);
-  if (!pocOk) {
-    console.error(
-      '[IPQA] Phase 0 PoC failed. Remote task submission or result polling is not working correctly. Stopping plugin scheduling.'
-    );
-    return;
   }
 
   // Register manual test endpoints
