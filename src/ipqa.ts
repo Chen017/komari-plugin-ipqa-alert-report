@@ -57,6 +57,28 @@ export function parseAlertLine(line: string): IpqaAlert | null {
   return null;
 }
 
+/**
+ * Canonicalizes provider, service, or entity names for strict deduplication.
+ * Strips punctuation, spaces, converts to lowercase, and maps aliases.
+ */
+export function canonicalEntityKey(raw: string): string {
+  const trimmed = (raw || '').trim().toLowerCase();
+  const normalized = trimmed.replace(/[\s\-_+.]/g, '');
+  const ALIAS_MAP: Record<string, string> = {
+    dbip: 'dbip',
+    'db-ip': 'dbip',
+    ipqs: 'ipqs',
+    ipqualityscore: 'ipqs',
+    amazonpv: 'amazonprimevideo',
+    amazonprimevideo: 'amazonprimevideo',
+    'disney+': 'disneyplus',
+    disneyplus: 'disneyplus',
+    youtube: 'youtube',
+    ip2location: 'ip2location',
+  };
+  return ALIAS_MAP[trimmed] || ALIAS_MAP[normalized] || normalized;
+}
+
 export interface ClassifiedLegacyAlert {
   category:
     | 'score'
@@ -70,6 +92,8 @@ export interface ClassifiedLegacyAlert {
     | 'unknown';
   typeKind?: 'info_type' | 'usage_type' | 'company_type';
   providerOrService?: string;
+  factorEngine?: string;
+  factorName?: string;
   isSupplemental: boolean;
 }
 
@@ -78,6 +102,11 @@ export interface ClassifiedLegacyAlert {
  */
 export function classifyLegacyAlertForDedupe(alert: IpqaAlert): ClassifiedLegacyAlert {
   const msg = alert.message || '';
+
+  // 3-field legacy lines without ipVersion cannot be reliably matched against semantic diffs
+  if (!alert.ipVersion) {
+    return { category: 'unknown', isSupplemental: true };
+  }
 
   if (msg.includes('首次完成数据存档监测')) {
     return { category: 'initial_archive', isSupplemental: false };
@@ -94,14 +123,14 @@ export function classifyLegacyAlertForDedupe(alert: IpqaAlert): ClassifiedLegacy
   // Score
   if (msg.includes('风险等级')) {
     const scoreMatch = msg.match(
-      /(IPQS|DB-IP|DBIP|ipapi|scamalytics|IP2LOCATION|ipdata|abuseipdb|ipregistry|cloudflare)/i
+      /(IPQualityScore|IPQS|DB-IP|DBIP|ipapi|scamalytics|IP2LOCATION|ipdata|abuseipdb|ipregistry|cloudflare)/i
     );
     return {
       category: 'score',
       providerOrService: scoreMatch
-        ? scoreMatch[1].toLowerCase().replace('-', '')
+        ? canonicalEntityKey(scoreMatch[1])
         : undefined,
-      isSupplemental: false,
+      isSupplemental: !scoreMatch,
     };
   }
 
@@ -110,8 +139,10 @@ export function classifyLegacyAlertForDedupe(alert: IpqaAlert): ClassifiedLegacy
     const mediaMatch = msg.match(/^(.*?)\s*解锁状态/);
     return {
       category: 'media_status',
-      providerOrService: mediaMatch ? mediaMatch[1].trim().toLowerCase() : undefined,
-      isSupplemental: false,
+      providerOrService: mediaMatch
+        ? canonicalEntityKey(mediaMatch[1])
+        : undefined,
+      isSupplemental: !mediaMatch,
     };
   }
 
@@ -120,30 +151,38 @@ export function classifyLegacyAlertForDedupe(alert: IpqaAlert): ClassifiedLegacy
     const regMatch = msg.match(/^(.*?)\s*地区变动/);
     return {
       category: 'media_region',
-      providerOrService: regMatch ? regMatch[1].trim().toLowerCase() : undefined,
-      isSupplemental: false,
+      providerOrService: regMatch
+        ? canonicalEntityKey(regMatch[1])
+        : undefined,
+      isSupplemental: !regMatch,
     };
   }
 
-  // Type (distinguish info_type, usage_type, company_type)
+  // Type: only info_type (原生/广播类型) is eligible for deduplication against semantic info.type
   if (msg.includes('原生/广播类型')) {
     return { category: 'type', typeKind: 'info_type', isSupplemental: false };
   }
   if (msg.includes('使用类型属性变更为') || msg.includes('使用类型')) {
-    return { category: 'type', typeKind: 'usage_type', isSupplemental: false };
+    return { category: 'type', typeKind: 'usage_type', isSupplemental: true };
   }
   if (msg.includes('公司类型属性变更为') || msg.includes('公司类型')) {
-    return { category: 'type', typeKind: 'company_type', isSupplemental: false };
+    return { category: 'type', typeKind: 'company_type', isSupplemental: true };
   }
 
   // Factor
-  if (msg.includes('新增风险标记') || msg.includes('风险标记解除')) {
-    const factorMatch = msg.match(/检出\s*(\S+)\s*因子/);
-    return {
-      category: 'factor',
-      providerOrService: factorMatch ? factorMatch[1].trim().toLowerCase() : undefined,
-      isSupplemental: false,
-    };
+  if (msg.includes('检出') && msg.includes('因子')) {
+    const factorMatch = msg.match(
+      /(?:新增风险标记[:：]\s*|风险标记解除[:：]\s*)?(\S+?)\s*(?:检出|不再检出)\s*(\S+?)\s*因子/
+    );
+    if (factorMatch) {
+      return {
+        category: 'factor',
+        factorEngine: canonicalEntityKey(factorMatch[1]),
+        factorName: canonicalEntityKey(factorMatch[2]),
+        isSupplemental: false,
+      };
+    }
+    return { category: 'factor', isSupplemental: true };
   }
 
   return { category: 'unknown', isSupplemental: true };
@@ -188,6 +227,8 @@ export function mergeAlerts(
     category: string;
     typeKind?: 'info_type' | 'usage_type' | 'company_type';
     providerOrService?: string;
+    factorEngine?: string;
+    factorName?: string;
   }> = [];
 
   for (const sa of cleanSemanticAlerts) {
@@ -202,34 +243,33 @@ export function mergeAlerts(
       let normCategory = category;
       let providerOrService: string | undefined;
       let typeKind: 'info_type' | 'usage_type' | 'company_type' | undefined;
+      let factorEngine: string | undefined;
+      let factorName: string | undefined;
 
       if (category === 'score') {
         normCategory = 'score';
         if (field.startsWith('scores.')) {
-          providerOrService = field.slice(7).toLowerCase().replace('-', '');
+          providerOrService = canonicalEntityKey(field.slice(7));
         }
       } else if (category === 'media') {
         if (field.endsWith('.status')) {
           normCategory = 'media_status';
-          providerOrService = field.slice(6, -7).toLowerCase();
+          providerOrService = canonicalEntityKey(field.slice(6, -7));
         } else if (field.endsWith('.region')) {
           normCategory = 'media_region';
-          providerOrService = field.slice(6, -7).toLowerCase();
+          providerOrService = canonicalEntityKey(field.slice(6, -7));
         }
       } else if (category === 'type') {
         normCategory = 'type';
         if (field === 'info.type') {
           typeKind = 'info_type';
-        } else if (field.startsWith('type.usage') || field.startsWith('usage')) {
-          typeKind = 'usage_type';
-        } else if (field.startsWith('type.company') || field.startsWith('company')) {
-          typeKind = 'company_type';
         }
       } else if (category === 'factor') {
         normCategory = 'factor';
         const fParts = field.split('.');
-        if (fParts.length >= 2) {
-          providerOrService = fParts[1].toLowerCase();
+        if (fParts.length >= 3) {
+          factorName = canonicalEntityKey(fParts[1]);
+          factorEngine = canonicalEntityKey(fParts[2]);
         }
       }
 
@@ -238,6 +278,8 @@ export function mergeAlerts(
         category: normCategory,
         typeKind,
         providerOrService,
+        factorEngine,
+        factorName,
       });
     }
   }
@@ -254,33 +296,48 @@ export function mergeAlerts(
     }
     seenLegacyRaw.add(la.raw);
 
-    // 2. Classify
+    // 2. 3-field legacy lines without ipVersion are ambiguous, never suppressed
+    if (!la.ipVersion) {
+      keptLegacyAlerts.push(la);
+      continue;
+    }
+
+    // 3. Classify
     const classified = classifyLegacyAlertForDedupe(la);
 
-    // 3. Supplemental events are never suppressed
+    // 4. Supplemental events are never suppressed
     if (classified.isSupplemental) {
       keptLegacyAlerts.push(la);
       continue;
     }
 
-    // 4. Overlap suppression check
+    // 5. Overlap suppression check (exact canonical matching)
     const isOverlapped = semanticCoverage.some(sc => {
-      if (sc.ipVersion && la.ipVersion && sc.ipVersion !== la.ipVersion) {
+      if (sc.ipVersion !== la.ipVersion) {
         return false;
       }
       if (sc.category !== classified.category) {
         return false;
       }
       if (classified.category === 'type') {
-        return Boolean(classified.typeKind && sc.typeKind && classified.typeKind === sc.typeKind);
-      }
-      if (classified.providerOrService && sc.providerOrService) {
-        return (
-          sc.providerOrService.includes(classified.providerOrService) ||
-          classified.providerOrService.includes(sc.providerOrService)
+        return Boolean(
+          classified.typeKind === 'info_type' &&
+          sc.typeKind === 'info_type'
         );
       }
-      return true;
+      if (classified.category === 'factor') {
+        if (!classified.factorName || !classified.factorEngine || !sc.factorName || !sc.factorEngine) {
+          return false;
+        }
+        return (
+          sc.factorName === classified.factorName &&
+          sc.factorEngine === classified.factorEngine
+        );
+      }
+      if (classified.providerOrService && sc.providerOrService) {
+        return sc.providerOrService === classified.providerOrService;
+      }
+      return false;
     });
 
     if (isOverlapped) {
