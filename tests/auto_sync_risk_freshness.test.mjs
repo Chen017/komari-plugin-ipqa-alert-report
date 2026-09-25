@@ -290,3 +290,50 @@ __IPQA_BATCH_END__
   assert.strictEqual(ipapiDiff.afterCategory, '极高风险');
   assert.strictEqual(ipapiDiff.severity, 'CRITICAL');
 });
+
+
+test('incomplete archive batch is reported as sync failure', async () => {
+  const node = { uuid: 'partial-batch-node', name: 'Partial Batch', weight: 1 };
+  const manifestOutput = `
+__IPQA_MANIFEST_BEGIN__
+__IPQA_ENTRY__|v4|2026-09-25_040001.json|100|1790308801
+__IPQA_ENTRY__|v4|2026-09-25_040002.json|100|1790308802
+__IPQA_MANIFEST_END__
+`;
+  const raw = { Info: { IP: '198.51.100.10' } };
+  const partialFetchOutput = `
+__IPQA_BATCH_BEGIN__
+__IPQA_FILE_BEGIN__|v4|2026-09-25_040001.json
+${Buffer.from(JSON.stringify(raw)).toString('base64')}
+__IPQA_FILE_END__
+__IPQA_BATCH_END__
+`;
+
+  const server = {
+    cron: () => {},
+    getConfig: () => ({ enabled: true, all_nodes: true }),
+    call: async (method, params) => {
+      if (method === 'admin:exec') {
+        return {
+          task_id: params?.command?.includes('__IPQA_MANIFEST_BEGIN__')
+            ? 'manifest'
+            : 'fetch',
+        };
+      }
+      if (method === 'admin:getTaskResultsByTaskId') {
+        return {
+          results: [{
+            client: node.uuid,
+            exit_code: 0,
+            stdout: params?.task_id === 'manifest' ? manifestOutput : partialFetchOutput,
+          }],
+        };
+      }
+      return {};
+    },
+  };
+
+  const result = await syncNodeArchives(server, node, new Date('2026-09-25T00:00:00Z'));
+  assert.strictEqual(result.status, 'failed');
+  assert.match(result.error || '', /Incomplete archive batch/);
+});

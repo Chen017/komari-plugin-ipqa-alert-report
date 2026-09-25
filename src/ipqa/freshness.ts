@@ -1,22 +1,5 @@
 import { formatBeijingDateKey, getBeijingParts } from '../time.ts';
-
-export type ArchiveFreshnessStatus =
-  | 'fresh'
-  | 'pending_today'
-  | 'stale'
-  | 'sync_error'
-  | 'no_archive'
-  | 'not_installed'
-  | 'future_date';
-
-export interface NodeFreshness {
-  status: ArchiveFreshnessStatus;
-  latestDate: string | null;
-  expectedDate: string;
-  lastSyncAttemptAt?: string | null;
-  lastSyncSuccessAt?: string | null;
-  reason?: string | null;
-}
+import type { NodeFreshness } from './types.ts';
 
 export interface FreshnessInput {
   now?: Date;

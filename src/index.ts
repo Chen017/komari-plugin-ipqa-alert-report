@@ -4,7 +4,6 @@ import { registerScheduler, type ServerContext } from './scheduler.ts';
 import { runTestReport } from './test.ts';
 import { registerApiRoutes } from './api/routes.ts';
 import { loadConfig } from './config.ts';
-import { syncFleetArchives } from './ipqa/archive-sync.ts';
 
 // Komari plugin runtime injects 'server' module or global definePlugin
 let serverInstance: ServerContext;
@@ -26,6 +25,15 @@ const REQUIRED_RPCS = [
 ];
 
 let isCompatible = true;
+
+export function isAdminPrincipal(principal: any): boolean {
+  return Boolean(
+    principal &&
+      ((principal.type === 'user' && principal.roles?.includes('admin')) ||
+        principal.type === 'api_key' ||
+        principal.is_api_key === true)
+  );
+}
 
 /**
  * Validates RPC runtime compatibility on plugin load (Section 33).
@@ -170,17 +178,13 @@ export async function load(): Promise<void> {
   if (typeof serverInstance.route === 'function') {
     const testRouteHandler = async (req: any, res: any) => {
       try {
-        if (req && req.context && req.context.principal) {
-          const p = req.context.principal;
-          const isAdmin =
-            (p.type === 'user' && (p.roles?.includes('admin') || p.role === 'admin')) ||
-            p.is_api_key;
-          if (!isAdmin && p.type !== 'anonymous') {
-            res.statusCode = 403;
-            res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            res.end(JSON.stringify({ success: false, error: 'Forbidden: Admin access required' }));
-            return;
-          }
+        const p = req?.context?.principal;
+        const isAdmin = isAdminPrincipal(p);
+        if (!isAdmin) {
+          res.statusCode = 403;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ success: false, error: 'Forbidden: Admin access required' }));
+          return;
         }
 
         let options = {};
@@ -218,17 +222,13 @@ export async function load(): Promise<void> {
 
     const syncRouteHandler = async (req: any, res: any) => {
       try {
-        if (req && req.context && req.context.principal) {
-          const p = req.context.principal;
-          const isAdmin =
-            (p.type === 'user' && (p.roles?.includes('admin') || p.role === 'admin')) ||
-            p.is_api_key;
-          if (!isAdmin && p.type !== 'anonymous') {
-            res.statusCode = 403;
-            res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            res.end(JSON.stringify({ success: false, error: 'Forbidden: Admin access required' }));
-            return;
-          }
+        const p = req?.context?.principal;
+        const isAdmin = isAdminPrincipal(p);
+        if (!isAdmin) {
+          res.statusCode = 403;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ success: false, error: 'Forbidden: Admin access required' }));
+          return;
         }
 
         const { syncIpqaArchives } = await import('./ipqa/archive-sync.ts');

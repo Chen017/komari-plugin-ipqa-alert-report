@@ -334,3 +334,35 @@ test('archive-sync: rebuildNodeDailyReports maps manifest mtime into normalized 
   assert.strictEqual(report.date, '2026-09-22');
   assert.strictEqual(report.v4?.timestamp, '2026-09-21T20:00:00.000Z');
 });
+test('archive-diff: DNS blacklist changes are semantic alerts', () => {
+  const prev = {
+    schemaVersion: 1,
+    nodeUuid: 'dnsbl-node',
+    date: '2026-09-24',
+    updatedAt: '',
+    v4: normalizeRawIpqa(
+      { Mail: { DNSBlacklist: { Blacklisted: 0 } } },
+      'v4',
+      '2026-09-24_040000.json'
+    ),
+    v6: null,
+    summary: { hasV4: true, hasV6: false, highestRiskCategory: 'Unknown', highestRiskSource: 'None', mediaSummary: {}, aiSummary: {} },
+  };
+  const curr = {
+    ...prev,
+    date: '2026-09-25',
+    v4: normalizeRawIpqa(
+      { Mail: { DNSBlacklist: { Blacklisted: 3 } } },
+      'v4',
+      '2026-09-25_040000.json'
+    ),
+  };
+
+  const changes = compareDailyReports(prev, curr);
+  const dnsbl = changes.find(c => c.field === 'mail.DNSBlacklist.Blacklisted');
+  assert.ok(dnsbl);
+  assert.strictEqual(dnsbl.category, 'dnsbl');
+  assert.strictEqual(dnsbl.severity, 'WARNING');
+});
+
+

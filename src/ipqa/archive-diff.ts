@@ -158,7 +158,41 @@ function compareSingleVersion(
     }
   }
 
-  // 6. Generic leaf diff on extra fields (Section 24)
+  // 6. DNS blacklist count
+  const prevBlacklistRaw = (prev.mail as any)?.DNSBlacklist?.Blacklisted;
+  const currBlacklistRaw = (curr.mail as any)?.DNSBlacklist?.Blacklisted;
+  const prevBlacklist =
+    prevBlacklistRaw === null || prevBlacklistRaw === undefined || prevBlacklistRaw === ''
+      ? null
+      : Number(prevBlacklistRaw);
+  const currBlacklist =
+    currBlacklistRaw === null || currBlacklistRaw === undefined || currBlacklistRaw === ''
+      ? null
+      : Number(currBlacklistRaw);
+  if (
+    prevBlacklist !== null &&
+    currBlacklist !== null &&
+    Number.isFinite(prevBlacklist) &&
+    Number.isFinite(currBlacklist) &&
+    prevBlacklist !== currBlacklist
+  ) {
+    changes.push({
+      date,
+      nodeUuid,
+      ipVersion: ipVer,
+      category: 'dnsbl',
+      severity: currBlacklist > prevBlacklist ? 'WARNING' : 'INFO',
+      field: 'mail.DNSBlacklist.Blacklisted',
+      before: prevBlacklist,
+      after: currBlacklist,
+      description:
+        currBlacklist > prevBlacklist
+          ? `DNS 黑名单拦截数增加 (从 ${prevBlacklist} 增至 ${currBlacklist})`
+          : `DNS 黑名单拦截数下降 (从 ${prevBlacklist} 降至 ${currBlacklist})`,
+    });
+  }
+
+  // 7. Generic leaf diff on extra fields (Section 24)
   diffLeafFields(prev.extra, curr.extra, 'extra', (path, before, after) => {
     changes.push({
       date,

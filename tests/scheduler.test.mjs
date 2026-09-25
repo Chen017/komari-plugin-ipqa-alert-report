@@ -281,4 +281,28 @@ describe('scheduler.ts - Scheduler Due & Duplicate Prevention', () => {
     await schedulerTick(mockServer, at0700);
     assert.deepEqual(executedActions, ['alerts_collection', 'notification'], 'Must execute alerts report without archive sync');
   });
+  it('retries instead of marking the day complete when node discovery RPC fails', async () => {
+    const dueTime = new Date('2026-09-20T23:00:00.000Z');
+    const mockServer = {
+      cron: () => {},
+      getConfig: () => ({ enabled: true, all_nodes: true, sync_archives: false }),
+      call: async (method) => {
+        if (method === 'common:getNodes') {
+          throw new Error('temporary RPC failure');
+        }
+        return {};
+      },
+    };
+
+    await assert.rejects(
+      () => runDailyReport(mockServer, dueTime),
+      /temporary RPC failure/
+    );
+
+    const state = JSON.parse(fs.readFileSync(getStateFilePath(), 'utf-8'));
+    assert.equal(state.last_run_beijing_date, '');
+    assert.equal(state.attempt_count, 1);
+  });
+
+
 });

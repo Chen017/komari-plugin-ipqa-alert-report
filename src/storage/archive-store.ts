@@ -41,8 +41,9 @@ export function safeWriteJson(filePath: string, data: any): void {
     try {
       if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
     } catch {
-      // ignore
+      // ignore cleanup failure; preserve the original write error
     }
+    throw err;
   }
 }
 
