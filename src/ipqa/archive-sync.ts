@@ -245,13 +245,21 @@ export async function syncNodeArchives(
       );
 
       const fetchRes = fetchResults.get(node.uuid);
-      if (fetchRes && fetchRes.stdout) {
-        const fetched = parseBatchFetchOutput(fetchRes.stdout);
-        for (const item of fetched) {
-          if (item.rawJson && typeof item.rawJson === 'object') {
-            saveRawArchive(node.uuid, item.ipVersion, item.filename, item.rawJson);
-            fetchedCount++;
-          }
+      if (!fetchRes || fetchRes.status === 'TIMEOUT' || !fetchRes.stdout) {
+        throw new Error(fetchRes?.error || `Failed to fetch archive batch ${i / BATCH_SIZE + 1}`);
+      }
+
+      const fetched = parseBatchFetchOutput(fetchRes.stdout);
+      if (fetched.length !== batch.length) {
+        throw new Error(
+          `Incomplete archive batch: expected ${batch.length}, received ${fetched.length}`
+        );
+      }
+
+      for (const item of fetched) {
+        if (item.rawJson && typeof item.rawJson === 'object') {
+          saveRawArchive(node.uuid, item.ipVersion, item.filename, item.rawJson);
+          fetchedCount++;
         }
       }
     }
