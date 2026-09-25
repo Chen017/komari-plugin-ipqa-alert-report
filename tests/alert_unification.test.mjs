@@ -642,4 +642,295 @@ describe('Alert Unification & Stale Node Regression Test Suite', () => {
     const result0700 = await runTestReport(server, { window: 'today_0700' }, testNow);
     assert.strictEqual(result0700.alertCount, 2, 'today_0700 should unify semantic and legacy alerts');
   });
+
+  // T22 — global admin:exec throw + semantic alert present -> notification sent, run completes
+  it('T22: global admin:exec failure does not block semantic alert notification', async () => {
+    const node = makeNode({ uuid: 'node-t22', name: 'Node T22' });
+    seedDailyReport(node.uuid, {
+      date: '2026-09-25',
+      changes: [
+        makeSemanticChange({
+          nodeUuid: node.uuid,
+          severity: 'CRITICAL',
+          description: 'IPQS risk score changed',
+        }),
+      ],
+    });
+    let notified = false;
+    let message = '';
+    const server = makeMockServer({
+      nodes: [node],
+      execCallback: () => {
+        throw new Error('RPC connection refused');
+      },
+      onNotification: (p) => {
+        notified = true;
+        message = p?.event?.message || p?.message || '';
+      },
+    });
+    await runDailyReport(server, new Date('2026-09-24T23:00:00Z'));
+    assert.strictEqual(notified, true);
+    assert.ok(message.includes('IPQS risk score changed'));
+  });
+
+  // T23 — missing task_id + semanticAvailable=true -> semantic survives
+  it('T23: admin:exec missing task_id does not suppress semantic alerts', async () => {
+    const node = makeNode({ uuid: 'node-t23', name: 'Node T23' });
+    seedDailyReport(node.uuid, {
+      date: '2026-09-25',
+      changes: [makeSemanticChange({ nodeUuid: node.uuid, severity: 'CRITICAL' })],
+    });
+    let notified = false;
+    const server = makeMockServer({
+      nodes: [node],
+      execCallback: () => ({}),
+      onNotification: () => { notified = true; },
+    });
+    await runDailyReport(server, new Date('2026-09-24T23:00:00Z'));
+    assert.strictEqual(notified, true);
+  });
+
+  // T24 — zero-change semantic day with legacy timeout -> status=OK, alerts=0, failedNodes=0
+  it('T24: zero-change semantic day with legacy timeout is OK not failed', async () => {
+    const node = makeNode({ uuid: 'node-t24', name: 'Node T24' });
+    seedDailyReport(node.uuid, { date: '2026-09-25', changes: [] });
+    const server = makeMockServer({
+      nodes: [node],
+      taskResults: [{ client_id: node.uuid, status: 'timeout' }],
+    });
+    const results = await collectDailyNodeResults({
+      server,
+      targets: [node],
+      config: makeConfig(),
+      dateKey: '2026-09-25',
+      startEpoch: 0,
+      endEpoch: 9999999999,
+    });
+    assert.strictEqual(results.length, 1);
+    assert.strictEqual(results[0].status, 'OK');
+    assert.strictEqual(results[0].alerts.length, 0);
+  });
+
+  // T25 — sync_archives=false + global admin:exec failure -> rejects and increments retry count
+  it('T25: sync_archives=false with global admin:exec failure triggers scheduler retry', async () => {
+    const node = makeNode({ uuid: 'node-t25', name: 'Node T25' });
+    const server = makeMockServer({
+      nodes: [node],
+      config: { sync_archives: false },
+      execCallback: () => { throw new Error('Global RPC network error'); },
+    });
+    await assert.rejects(
+      async () => runDailyReport(server, new Date('2026-09-24T23:00:00Z')),
+      /Global RPC network error/
+    );
+    const state = loadState();
+    assert.strictEqual(state.attempt_count, 1);
+    assert.notStrictEqual(state.last_run_beijing_date, '2026-09-25');
+  });
+
+  // T26 — mixed nodes + global legacy failure -> DataWave OK+CRITICAL, Vmiss OK+0, Zouter failed
+  it('T26: mixed nodes under global legacy failure preserve semantic and isolate failures', async () => {
+    const datawave = makeNode({ uuid: 'dw-1', name: 'DataWave' });
+    const vmiss = makeNode({ uuid: 'vm-1', name: 'Vmiss' });
+    const zouter = makeNode({ uuid: 'zo-1', name: 'Zouter' });
+    seedDailyReport(datawave.uuid, {
+      date: '2026-09-25',
+      changes: [makeSemanticChange({ nodeUuid: datawave.uuid, severity: 'CRITICAL', description: 'DW Alert' })],
+    });
+    seedDailyReport(vmiss.uuid, { date: '2026-09-25', changes: [] });
+    let message = '';
+    const server = makeMockServer({
+      nodes: [datawave, vmiss, zouter],
+      execCallback: () => { throw new Error('RPC down'); },
+      onNotification: (p) => { message = p?.event?.message || p?.message || ''; },
+    });
+    await runDailyReport(server, new Date('2026-09-24T23:00:00Z'));
+    assert.ok(message.includes('DataWave'));
+    assert.ok(message.includes('DW Alert'));
+    assert.ok(message.includes('Zouter'));
+  });
+
+  // T27 — AmazonPV alias dedupe
+  it('T27: AmazonPV alias correctly dedupes against media.AmazonPrimeVideo.status', () => {
+    const nodeUuid = 'node-t27';
+    const dailyReport = makeDailyReport({
+      nodeUuid,
+      changes: [
+        makeSemanticChange({
+          nodeUuid,
+          category: 'media',
+          field: 'media.AmazonPrimeVideo.status',
+          description: 'AmazonPrimeVideo 解锁状态由 [Yes] 变为 [No]',
+        }),
+      ],
+    });
+    const semanticAlerts = semanticChangesToAlerts(nodeUuid, dailyReport);
+    const legacyAlerts = [
+      {
+        nodeUuid,
+        timestamp: '2026-09-25 04:05:00',
+        level: 'WARNING',
+        message: 'AmazonPV 解锁状态变更为 [No]',
+        ipVersion: 'IPv4',
+        raw: '2026-09-25 04:05:00|WARNING|AmazonPV 解锁状态变更为 [No]|IPv4',
+        source: 'alerts_log',
+      },
+    ];
+    const mergeRes = mergeAlerts(nodeUuid, semanticAlerts, legacyAlerts);
+    assert.strictEqual(mergeRes.merged.length, 1);
+    assert.strictEqual(mergeRes.deduplicatedCount, 1);
+    assert.strictEqual(mergeRes.merged[0].source, 'archive_diff');
+  });
+
+  // T28 — Disney+ alias dedupe
+  it('T28: Disney+ alias correctly dedupes against media.DisneyPlus.status', () => {
+    const nodeUuid = 'node-t28';
+    const dailyReport = makeDailyReport({
+      nodeUuid,
+      changes: [
+        makeSemanticChange({
+          nodeUuid,
+          category: 'media',
+          field: 'media.DisneyPlus.status',
+          description: 'DisneyPlus 解锁状态由 [Yes] 变为 [No]',
+        }),
+      ],
+    });
+    const semanticAlerts = semanticChangesToAlerts(nodeUuid, dailyReport);
+    const legacyAlerts = [
+      {
+        nodeUuid,
+        timestamp: '2026-09-25 04:05:00',
+        level: 'WARNING',
+        message: 'Disney+ 解锁状态变更为 [No]',
+        ipVersion: 'IPv4',
+        raw: '2026-09-25 04:05:00|WARNING|Disney+ 解锁状态变更为 [No]|IPv4',
+        source: 'alerts_log',
+      },
+    ];
+    const mergeRes = mergeAlerts(nodeUuid, semanticAlerts, legacyAlerts);
+    assert.strictEqual(mergeRes.merged.length, 1);
+    assert.strictEqual(mergeRes.deduplicatedCount, 1);
+    assert.strictEqual(mergeRes.merged[0].source, 'archive_diff');
+  });
+
+  // T29 — factor engine precision: DBIP vs IPQS
+  it('T29: factor engine and factor name matching precision', () => {
+    const nodeUuid = 'node-t29';
+    const dailyReport = makeDailyReport({
+      nodeUuid,
+      changes: [
+        makeSemanticChange({
+          nodeUuid,
+          category: 'factor',
+          field: 'factors.Proxy.IPQS',
+          description: 'IPQS 检出 Proxy 因子',
+        }),
+      ],
+    });
+    const semanticAlerts = semanticChangesToAlerts(nodeUuid, dailyReport);
+    const legacyAlertsDifferentEngine = [
+      {
+        nodeUuid,
+        timestamp: '2026-09-25 04:05:00',
+        level: 'WARNING',
+        message: 'DBIP 检出 Proxy 因子',
+        ipVersion: 'IPv4',
+        raw: '2026-09-25 04:05:00|WARNING|DBIP 检出 Proxy 因子|IPv4',
+        source: 'alerts_log',
+      },
+    ];
+    const mergeDiff = mergeAlerts(nodeUuid, semanticAlerts, legacyAlertsDifferentEngine);
+    assert.strictEqual(mergeDiff.merged.length, 2, 'Different engine must not be deduplicated');
+    assert.strictEqual(mergeDiff.deduplicatedCount, 0);
+
+    const legacyAlertsSameEngine = [
+      {
+        nodeUuid,
+        timestamp: '2026-09-25 04:05:00',
+        level: 'WARNING',
+        message: 'IPQS 检出 Proxy 因子',
+        ipVersion: 'IPv4',
+        raw: '2026-09-25 04:05:00|WARNING|IPQS 检出 Proxy 因子|IPv4',
+        source: 'alerts_log',
+      },
+    ];
+    const mergeSame = mergeAlerts(nodeUuid, semanticAlerts, legacyAlertsSameEngine);
+    assert.strictEqual(mergeSame.merged.length, 1, 'Same engine and factor must be deduplicated');
+    assert.strictEqual(mergeSame.deduplicatedCount, 1);
+  });
+
+  // T30 — 3-field legacy ambiguity
+  it('T30: 3-field legacy alerts without ipVersion are never suppressed', () => {
+    const nodeUuid = 'node-t30';
+    const dailyReport = makeDailyReport({
+      nodeUuid,
+      changes: [
+        makeSemanticChange({
+          nodeUuid,
+          category: 'score',
+          field: 'scores.IPQS',
+          description: 'IPQS 评分变动',
+        }),
+      ],
+    });
+    const semanticAlerts = semanticChangesToAlerts(nodeUuid, dailyReport);
+    const legacyAlertsNoIpVersion = [
+      {
+        nodeUuid,
+        timestamp: '2026-09-25 04:05:00',
+        level: 'WARNING',
+        message: 'IPQS 风险等级上升至 [极高风险]',
+        ipVersion: '',
+        raw: '2026-09-25 04:05:00|WARNING|IPQS 风险等级上升至 [极高风险]',
+        source: 'alerts_log',
+      },
+    ];
+    const mergeRes = mergeAlerts(nodeUuid, semanticAlerts, legacyAlertsNoIpVersion);
+    assert.strictEqual(mergeRes.merged.length, 2, 'Ambiguous 3-field legacy alert must be retained');
+    assert.strictEqual(mergeRes.deduplicatedCount, 0);
+  });
+
+  // T31 — last_24h is legacy-only
+  it('T31: runTestReport with last_24h excludes semantic archive', async () => {
+    const node = makeNode({ uuid: 'node-t31', name: 'Node T31' });
+    seedDailyReport(node.uuid, {
+      date: '2026-09-25',
+      changes: [makeSemanticChange({ nodeUuid: node.uuid, severity: 'CRITICAL' })],
+    });
+    const server = makeMockServer({
+      nodes: [node],
+      taskResults: [
+        {
+          client_id: node.uuid,
+          status: 'completed',
+          stdout: '__IPQA_STATUS__|OK\n2026-09-25 10:00:00|WARNING|Legacy in-window alert|IPv4\n',
+        },
+      ],
+    });
+    const res = await runTestReport(server, { window: 'last_24h' }, new Date('2026-09-25T12:00:00Z'));
+    assert.strictEqual(res.alertCount, 1);
+    assert.strictEqual(res.report?.alertNodes[0].alerts[0].source, 'alerts_log');
+  });
+
+  // T32 — today_0700 still unified
+  it('T32: runTestReport with today_0700 unifies semantic archive with legacy', async () => {
+    const node = makeNode({ uuid: 'node-t32', name: 'Node T32' });
+    seedDailyReport(node.uuid, {
+      date: '2026-09-25',
+      changes: [makeSemanticChange({ nodeUuid: node.uuid, severity: 'CRITICAL', description: 'Semantic Alert' })],
+    });
+    const server = makeMockServer({
+      nodes: [node],
+      taskResults: [
+        {
+          client_id: node.uuid,
+          status: 'completed',
+          stdout: '__IPQA_STATUS__|OK\n2026-09-25 04:00:00|WARNING|Legacy Supplemental|IPv4\n',
+        },
+      ],
+    });
+    const res = await runTestReport(server, { window: 'today_0700' }, new Date('2026-09-25T12:00:00Z'));
+    assert.strictEqual(res.alertCount, 2);
+  });
 });
