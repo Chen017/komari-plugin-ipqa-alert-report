@@ -188,6 +188,96 @@ export function classifyLegacyAlertForDedupe(alert: IpqaAlert): ClassifiedLegacy
   return { category: 'unknown', isSupplemental: true };
 }
 
+/**
+ * Returns the canonical cross-source overlap identity used when deciding whether
+ * a semantic archive alert and an alerts.log entry describe the same event.
+ * Returns null for supplemental/ambiguous alerts that must never be suppressed.
+ */
+export function getCrossSourceOverlapKey(alert: IpqaAlert): string | null {
+  if (alert.dedupeKey) {
+    const parts = alert.dedupeKey.split('|');
+    // Semantic format: nodeUuid|ipVersion|category|field|before|after
+    if (parts.length < 4) return null;
+
+    const ipVersion = parts[1];
+    const category = parts[2];
+    const field = parts[3];
+    if (!ipVersion) return null;
+
+    if (category === 'score' && field.startsWith('scores.')) {
+      const provider = canonicalEntityKey(field.slice(7));
+      return provider ? `${ipVersion}|score|${provider}` : null;
+    }
+
+    if (category === 'media') {
+      if (field.endsWith('.status')) {
+        const service = canonicalEntityKey(field.slice(6, -7));
+        return service ? `${ipVersion}|media_status|${service}` : null;
+      }
+      if (field.endsWith('.region')) {
+        const service = canonicalEntityKey(field.slice(6, -7));
+        return service ? `${ipVersion}|media_region|${service}` : null;
+      }
+      return null;
+    }
+
+    if (category === 'type' && field === 'info.type') {
+      return `${ipVersion}|type|info_type`;
+    }
+
+    if (category === 'factor') {
+      const fieldParts = field.split('.');
+      if (fieldParts.length >= 3) {
+        const factorName = canonicalEntityKey(fieldParts[1]);
+        const factorEngine = canonicalEntityKey(fieldParts[2]);
+        if (factorName && factorEngine) {
+          return `${ipVersion}|factor|${factorEngine}|${factorName}`;
+        }
+      }
+      return null;
+    }
+
+    if (category === 'dnsbl') {
+      return `${ipVersion}|dnsbl`;
+    }
+
+    return null;
+  }
+
+  const classified = classifyLegacyAlertForDedupe(alert);
+  if (classified.isSupplemental || !alert.ipVersion) return null;
+
+  if (
+    (classified.category === 'score' ||
+      classified.category === 'media_status' ||
+      classified.category === 'media_region') &&
+    classified.providerOrService
+  ) {
+    return `${alert.ipVersion}|${classified.category}|${classified.providerOrService}`;
+  }
+
+  if (
+    classified.category === 'type' &&
+    classified.typeKind === 'info_type'
+  ) {
+    return `${alert.ipVersion}|type|info_type`;
+  }
+
+  if (
+    classified.category === 'factor' &&
+    classified.factorEngine &&
+    classified.factorName
+  ) {
+    return `${alert.ipVersion}|factor|${classified.factorEngine}|${classified.factorName}`;
+  }
+
+  if (classified.category === 'dnsbl') {
+    return `${alert.ipVersion}|dnsbl`;
+  }
+
+  return null;
+}
+
 export interface MergeAlertsResult {
   merged: IpqaAlert[];
   semanticCount: number;
@@ -221,67 +311,12 @@ export function mergeAlerts(
     cleanSemanticAlerts.push(a);
   }
 
-  // Catalog semantic changes for suppression of overlapping legacy alerts
-  const semanticCoverage: Array<{
-    ipVersion: string;
-    category: string;
-    typeKind?: 'info_type' | 'usage_type' | 'company_type';
-    providerOrService?: string;
-    factorEngine?: string;
-    factorName?: string;
-  }> = [];
-
+  // Catalog semantic changes using the same canonical overlap identity that
+  // the catch-up delivery state uses across retries.
+  const semanticCoverage = new Set<string>();
   for (const sa of cleanSemanticAlerts) {
-    if (!sa.dedupeKey) continue;
-    const parts = sa.dedupeKey.split('|');
-    // Format: ${nodeUuid}|${ipVersion}|${category}|${field}|${before}|${after}
-    if (parts.length >= 4) {
-      const ipVersion = parts[1];
-      const category = parts[2];
-      const field = parts[3];
-
-      let normCategory = category;
-      let providerOrService: string | undefined;
-      let typeKind: 'info_type' | 'usage_type' | 'company_type' | undefined;
-      let factorEngine: string | undefined;
-      let factorName: string | undefined;
-
-      if (category === 'score') {
-        normCategory = 'score';
-        if (field.startsWith('scores.')) {
-          providerOrService = canonicalEntityKey(field.slice(7));
-        }
-      } else if (category === 'media') {
-        if (field.endsWith('.status')) {
-          normCategory = 'media_status';
-          providerOrService = canonicalEntityKey(field.slice(6, -7));
-        } else if (field.endsWith('.region')) {
-          normCategory = 'media_region';
-          providerOrService = canonicalEntityKey(field.slice(6, -7));
-        }
-      } else if (category === 'type') {
-        normCategory = 'type';
-        if (field === 'info.type') {
-          typeKind = 'info_type';
-        }
-      } else if (category === 'factor') {
-        normCategory = 'factor';
-        const fParts = field.split('.');
-        if (fParts.length >= 3) {
-          factorName = canonicalEntityKey(fParts[1]);
-          factorEngine = canonicalEntityKey(fParts[2]);
-        }
-      }
-
-      semanticCoverage.push({
-        ipVersion,
-        category: normCategory,
-        typeKind,
-        providerOrService,
-        factorEngine,
-        factorName,
-      });
-    }
+    const key = getCrossSourceOverlapKey(sa);
+    if (key) semanticCoverage.add(key);
   }
 
   // Process legacy alerts
@@ -312,36 +347,10 @@ export function mergeAlerts(
     }
 
     // 5. Overlap suppression check (exact canonical matching)
-    const isOverlapped = semanticCoverage.some(sc => {
-      if (sc.ipVersion !== la.ipVersion) {
-        return false;
-      }
-      if (sc.category !== classified.category) {
-        return false;
-      }
-      if (classified.category === 'type') {
-        return Boolean(
-          classified.typeKind === 'info_type' &&
-          sc.typeKind === 'info_type'
-        );
-      }
-      if (classified.category === 'factor') {
-        if (!classified.factorName || !classified.factorEngine || !sc.factorName || !sc.factorEngine) {
-          return false;
-        }
-        return (
-          sc.factorName === classified.factorName &&
-          sc.factorEngine === classified.factorEngine
-        );
-      }
-      if (classified.category === 'dnsbl') {
-        return true;
-      }
-      if (classified.providerOrService && sc.providerOrService) {
-        return sc.providerOrService === classified.providerOrService;
-      }
-      return false;
-    });
+    const overlapKey = getCrossSourceOverlapKey(la);
+    const isOverlapped = Boolean(
+      overlapKey && semanticCoverage.has(overlapKey)
+    );
 
     if (isOverlapped) {
       deduplicatedCount++;

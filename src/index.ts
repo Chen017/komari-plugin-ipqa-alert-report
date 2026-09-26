@@ -32,7 +32,6 @@ export async function load(): Promise<void> {
 
   if (!serverInstance) {
     try {
-      // @ts-expect-error runtime require
       serverInstance = require('server');
     } catch (e) {
       throw new Error(
@@ -182,7 +181,6 @@ export async function unload(): Promise<void> {
 }
 
 // Ensure global functions for Goja runtime
-// @ts-expect-error global scope
 if (typeof globalThis !== 'undefined') {
   // @ts-expect-error global scope
   globalThis.load = load;

@@ -8,6 +8,7 @@ import {
   shouldSendNotification,
 } from './report.ts';
 import { loadState, saveState } from './state.ts';
+import { getCrossSourceOverlapKey } from './ipqa.ts';
 import type { IpqaAlert, NodeCollectionResult } from './types.ts';
 import {
   formatBeijingDateKey,
@@ -32,17 +33,54 @@ export function failureDeliveryKey(node: NodeCollectionResult): string {
   return `failure|${node.uuid}|${node.status}`;
 }
 
+export function alertOverlapDeliveryKey(
+  nodeUuid: string,
+  alert: IpqaAlert
+): string | null {
+  const overlapKey = getCrossSourceOverlapKey(alert);
+  return overlapKey ? `overlap|${nodeUuid}|${overlapKey}` : null;
+}
+
+/**
+ * Filters already-delivered items from a catch-up tick.
+ *
+ * Exact keys handle ordinary retry idempotence. pendingLegacyOverlapKeys only
+ * bridges the one transition that exact keys cannot cover: a legacy alerts.log
+ * event sent while semantic data was missing, followed by the matching semantic
+ * archive alert on a later tick.
+ *
+ * When that transition is reconciled, the semantic exact key is also recorded
+ * and the pending overlap key is consumed, so later semantic retries stay silent
+ * without broadly suppressing future events in the same category.
+ */
 function buildDeliveryResults(
   nodeResults: NodeCollectionResult[],
-  sentKeys: Set<string>
+  sentKeys: Set<string>,
+  pendingLegacyOverlapKeys: Set<string>
 ): NodeCollectionResult[] {
   return nodeResults.map(node => {
     if (node.status === 'OK') {
       return {
         ...node,
-        alerts: node.alerts.filter(
-          alert => !sentKeys.has(alertDeliveryKey(node.uuid, alert))
-        ),
+        alerts: node.alerts.filter(alert => {
+          const exactKey = alertDeliveryKey(node.uuid, alert);
+          if (sentKeys.has(exactKey)) {
+            return false;
+          }
+
+          if (node.semanticAvailable === true && alert.source === 'archive_diff') {
+            const overlapKey = alertOverlapDeliveryKey(node.uuid, alert);
+            if (overlapKey && pendingLegacyOverlapKeys.has(overlapKey)) {
+              // The same business event was already delivered from alerts.log on
+              // an earlier tick while semantic data was missing.
+              sentKeys.add(exactKey);
+              pendingLegacyOverlapKeys.delete(overlapKey);
+              return false;
+            }
+          }
+
+          return true;
+        }),
       };
     }
 
@@ -58,23 +96,31 @@ function buildDeliveryResults(
   });
 }
 
-function collectDeliveredKeys(
+function recordDeliveredItems(
   nodeResults: NodeCollectionResult[],
-  notifyCollectionFailures: boolean
-): string[] {
-  const keys: string[] = [];
-
+  notifyCollectionFailures: boolean,
+  sentKeys: Set<string>,
+  pendingLegacyOverlapKeys: Set<string>
+): void {
   for (const node of nodeResults) {
     if (node.status === 'OK') {
       for (const alert of node.alerts) {
-        keys.push(alertDeliveryKey(node.uuid, alert));
+        sentKeys.add(alertDeliveryKey(node.uuid, alert));
+
+        if (
+          node.semanticAvailable === false &&
+          alert.source === 'alerts_log'
+        ) {
+          const overlapKey = alertOverlapDeliveryKey(node.uuid, alert);
+          if (overlapKey) {
+            pendingLegacyOverlapKeys.add(overlapKey);
+          }
+        }
       }
     } else if (notifyCollectionFailures) {
-      keys.push(failureDeliveryKey(node));
+      sentKeys.add(failureDeliveryKey(node));
     }
   }
-
-  return keys;
 }
 
 /**
@@ -118,6 +164,7 @@ export async function runDailyReport(server: ServerContext, now = new Date()): P
       state.daily_delivery = {
         beijing_date: dateKey,
         sent_keys: [],
+        pending_legacy_overlap_keys: [],
       };
       state.last_summary = {
         selected_nodes: 0,
@@ -157,12 +204,33 @@ export async function runDailyReport(server: ServerContext, now = new Date()): P
       state.daily_delivery = {
         beijing_date: dateKey,
         sent_keys: [],
+        pending_legacy_overlap_keys: [],
       };
     }
 
     const sentKeys = new Set(state.daily_delivery.sent_keys);
-    const deliveryResults = buildDeliveryResults(nodeResults, sentKeys);
-    const report = buildDailyReport({
+    const pendingLegacyOverlapKeys = new Set(
+      state.daily_delivery.pending_legacy_overlap_keys ?? []
+    );
+    const deliveryResults = buildDeliveryResults(
+      nodeResults,
+      sentKeys,
+      pendingLegacyOverlapKeys
+    );
+
+    // Keep two reports intentionally:
+    // - fullReport describes the latest complete snapshot seen on this tick and
+    //   is used for persisted summary state.
+    // - deliveryReport contains only items not already delivered and is used for
+    //   Telegram output.
+    const fullReport = buildDailyReport({
+      dateKey,
+      windowStart,
+      windowEnd,
+      selectedNodeCount: targets.length,
+      nodeResults,
+    });
+    const deliveryReport = buildDailyReport({
       dateKey,
       windowStart,
       windowEnd,
@@ -171,20 +239,23 @@ export async function runDailyReport(server: ServerContext, now = new Date()): P
     });
 
     console.log(
-      `[IPQA] report: alert_nodes=${report.alertNodeCount} alerts=${report.alertCount} failures=${report.failedNodes.length}`
+      `[IPQA] report: alert_nodes=${fullReport.alertNodeCount} alerts=${fullReport.alertCount} failures=${fullReport.failedNodes.length} pending_delivery=${deliveryReport.alertCount}`
     );
 
-    if (shouldSendNotification(report, config)) {
-      const message = renderReport(report, config);
+    if (shouldSendNotification(deliveryReport, config)) {
+      const message = renderReport(deliveryReport, config);
       await sendNotification(server, message);
 
-      for (const key of collectDeliveredKeys(
+      recordDeliveredItems(
         deliveryResults,
-        config.notify_collection_failures
-      )) {
-        sentKeys.add(key);
-      }
+        config.notify_collection_failures,
+        sentKeys,
+        pendingLegacyOverlapKeys
+      );
       state.daily_delivery.sent_keys = [...sentKeys];
+      state.daily_delivery.pending_legacy_overlap_keys = [
+        ...pendingLegacyOverlapKeys,
+      ];
       saveState(state);
       console.log('[IPQA] notification sent');
     }
@@ -206,12 +277,22 @@ export async function runDailyReport(server: ServerContext, now = new Date()): P
     state.last_success_at = new Date().toISOString();
     state.attempt_date = dateKey;
     state.attempt_count = 0;
+    // Persist the full latest snapshot, not the incremental delivery delta.
+    // Otherwise a quiet later retry would overwrite an earlier successful
+    // DataWave/Vmiss delivery with alerts=0.
     state.last_summary = {
       selected_nodes: targets.length,
-      alert_nodes: report.alertNodeCount,
-      alerts: report.alertCount,
-      collection_failures: report.failedNodes.length,
+      alert_nodes: fullReport.alertNodeCount,
+      alerts: fullReport.alertCount,
+      collection_failures: fullReport.failedNodes.length,
     };
+
+    // Reconciliation can mutate these sets even when no notification is sent.
+    // Persist them on the normal end-of-tick save below as well.
+    state.daily_delivery.sent_keys = [...sentKeys];
+    state.daily_delivery.pending_legacy_overlap_keys = [
+      ...pendingLegacyOverlapKeys,
+    ];
 
     if (retryForLateSemantic) {
       state.last_run_beijing_date = '';
