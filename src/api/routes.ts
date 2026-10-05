@@ -4,9 +4,11 @@ import {
   getFleetOverview,
   getLatestDailyReport,
   listDailyDates,
+  isValidNodeId,
+  isValidArchiveDate,
 } from '../storage/archive-store.ts';
 
-const PLUGIN_VERSION = '0.2.1';
+const PLUGIN_VERSION = '0.2.2';
 const API_PREFIX = '/api/plugin/ipqa-alert-report/v1';
 
 function parseUrl(urlStr: string): { pathname: string; query: Record<string, string> } {
@@ -91,23 +93,25 @@ export function handleGetNodes() {
 }
 
 export function handleGetNodeLatest(uuid: string) {
-  if (!uuid) return null;
+  if (!isValidNodeId(uuid)) return null;
   return getLatestDailyReport(uuid);
 }
 
 export function handleGetNodeArchives(uuid: string, limit = 30, before?: string) {
-  if (!uuid) return { uuid, dates: [], total: 0 };
+  if (!isValidNodeId(uuid) || (before !== undefined && !isValidArchiveDate(before)))
+    return { uuid, dates: [], total: 0, hasMore: false };
   let dates = listDailyDates(uuid);
   if (before) {
     dates = dates.filter(d => d < before);
   }
-  const lim = Math.min(100, Math.max(1, Number(limit || 30)));
+  const total = dates.length;
+  const lim = Number.isFinite(Number(limit)) ? Math.min(100, Math.max(1, Math.floor(Number(limit) || 30))) : 30;
   dates = dates.slice(0, lim);
-  return { uuid, dates, total: dates.length };
+  return { uuid, dates, total, hasMore: total > dates.length };
 }
 
 export function handleGetNodeArchive(uuid: string, date: string) {
-  if (!uuid || !date) return null;
+  if (!isValidNodeId(uuid) || !isValidArchiveDate(date)) return null;
   return getDailyReport(uuid, date);
 }
 

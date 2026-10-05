@@ -11,12 +11,17 @@ import { getReportRiskCategory, normalizeRawIpqa } from './archive-normalize.ts'
 import { pairDailyReports } from './archive-pair.ts';
 import { compareDailyReports } from './archive-diff.ts';
 import { calculateFreshness } from './freshness.ts';
+import { classifyMediaUnlock } from './media-status.ts';
 import {
   getLatestDailyReport,
   hasRawArchive,
   listCachedRawFilenames,
   readRawArchive,
-  saveDailyReport,
+  readArchiveTimes,
+  saveArchiveTimes,
+  replaceDailyReports,
+  getDailyReport,
+  listDailyDates,
   saveFleetOverview,
   saveRawArchive,
 } from '../storage/archive-store.ts';
@@ -109,9 +114,7 @@ function buildProtocolSummary(rep: IpqaNormalizedReport | null | undefined) {
   const ai: Record<string, any> = {};
   if (rep.media) {
     for (const [s, data] of Object.entries(rep.media as Record<string, any>)) {
-      const status = data?.status;
-      const isUnlocked = typeof status === 'string' && (status.includes('解锁') || status.includes('Yes') || status.includes('仅自制'));
-      const item = { ...data, unlocked: isUnlocked };
+      const item = classifyMediaUnlock(data);
       const sLower = s.toLowerCase();
       if (sLower.includes('chatgpt') || sLower.includes('claude') || sLower.includes('openai')) {
         ai[s] = item;
@@ -310,15 +313,25 @@ export function rebuildNodeDailyReports(
   nodeUuid: string,
   remoteEntries?: ManifestEntry[]
 ): void {
-  const mtimeMap = new Map<string, number>();
-  if (remoteEntries) {
-    for (const e of remoteEntries) {
-      if (e.mtime && e.mtime > 0) {
-        mtimeMap.set(`${e.ipVersion}|${e.filename}`, e.mtime);
-        mtimeMap.set(e.filename, e.mtime);
-      }
+  const times = readArchiveTimes(nodeUuid);
+  // Migrate existing canonical UTC timestamps before remote retention removes their manifest entries.
+  for (const date of listDailyDates(nodeUuid)) {
+    const daily = getDailyReport(nodeUuid, date);
+    for (const version of ['v4', 'v6'] as const) {
+      const report = daily?.[version];
+      if (!report || !report.timestamp.endsWith('Z')) continue;
+      const key = `${version}|${report.archiveId}`;
+      const epoch = Date.parse(report.timestamp) / 1000;
+      if (!times[key] && Number.isFinite(epoch) && epoch > 0) times[key] = epoch;
     }
   }
+  if (remoteEntries) {
+    for (const e of remoteEntries) {
+      if (e.mtime && Number.isFinite(e.mtime) && e.mtime > 0)
+        times[`${e.ipVersion}|${e.filename}`] = e.mtime;
+    }
+  }
+  saveArchiveTimes(nodeUuid, times);
 
   const v4Filenames = listCachedRawFilenames(nodeUuid, 'v4');
   const v6Filenames = listCachedRawFilenames(nodeUuid, 'v6');
@@ -327,7 +340,7 @@ export function rebuildNodeDailyReports(
   for (const fn of v4Filenames) {
     const raw = readRawArchive(nodeUuid, 'v4', fn);
     if (raw) {
-      const mtime = mtimeMap.get(`v4|${fn}`) ?? mtimeMap.get(fn);
+      const mtime = times[`v4|${fn}`];
       v4Reports.push(normalizeRawIpqa(raw, 'v4', fn, mtime));
     }
   }
@@ -336,7 +349,7 @@ export function rebuildNodeDailyReports(
   for (const fn of v6Filenames) {
     const raw = readRawArchive(nodeUuid, 'v6', fn);
     if (raw) {
-      const mtime = mtimeMap.get(`v6|${fn}`) ?? mtimeMap.get(fn);
+      const mtime = times[`v6|${fn}`];
       v6Reports.push(normalizeRawIpqa(raw, 'v6', fn, mtime));
     }
   }
@@ -349,8 +362,8 @@ export function rebuildNodeDailyReports(
     const current = dailyReports[i]!;
     const previous = i + 1 < dailyReports.length ? dailyReports[i + 1]! : null;
     current.changesFromPrevious = compareDailyReports(previous, current);
-    saveDailyReport(nodeUuid, current);
   }
+  replaceDailyReports(nodeUuid, dailyReports);
 }
 
 /**
@@ -385,7 +398,8 @@ export async function syncIpqaArchives(
 
   const config = await loadConfig(server);
   const allNodes = await fetchAllNodes(server);
-  let targets = resolveTargetNodes(config, allNodes);
+  const configuredTargets = resolveTargetNodes(config, allNodes);
+  let targets = configuredTargets;
 
   if (options.selectedNodeUuids && options.selectedNodeUuids.length > 0) {
     targets = targets.filter(n => options.selectedNodeUuids!.includes(n.uuid));
@@ -479,11 +493,24 @@ export async function syncIpqaArchives(
     }
   }
 
+  // Execution may be scoped to a subset; the public index always covers the full configured fleet.
+  const refreshedIds = new Set(nodeOverviews.map(node => node.uuid));
+  for (const node of configuredTargets) {
+    if (!refreshedIds.has(node.uuid))
+      nodeOverviews.push(buildNodeOverview(node, state.archive_sync.nodes[node.uuid]?.error, now));
+  }
+  for (const overview of nodeOverviews) {
+    const sync = state.archive_sync.nodes[overview.uuid];
+    if (overview.freshness && sync) {
+      overview.freshness.lastSyncAttemptAt = sync.last_attempt_at;
+      overview.freshness.lastSyncSuccessAt = sync.last_success_at;
+    }
+  }
   // Rebuild fleet overview
   const fleetOverview: IpqaFleetOverview = {
     schema_version: 1,
     updated_at: new Date().toISOString(),
-    total_nodes: targets.length,
+    total_nodes: configuredTargets.length,
     ipqa_nodes: nodeOverviews.filter(n => n.status === 'ok' || n.status === 'stale' || n.status === 'fresh' || n.status === 'pending_today').length,
     nodes_with_risk: nodeOverviews.filter(n => n.highest_risk.category === 'High' || n.highest_risk.category === 'Critical').length,
     nodes_with_changes_today: nodeOverviews.filter(n => n.changes_today > 0).length,

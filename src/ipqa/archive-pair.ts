@@ -5,6 +5,7 @@ import type {
   RiskCategory,
 } from './types.ts';
 import { getReportRiskCategory } from './archive-normalize.ts';
+import { classifyMediaUnlock } from './media-status.ts';
 
 const RISK_RANK: Record<RiskCategory, number> = {
   Critical: 4,
@@ -32,18 +33,14 @@ function extractMediaAndAiSummary(
     const s4 = v4?.media[svc];
     const s6 = v6?.media[svc];
 
-    const isUnlocked = (st?: string) => {
-      if (!st) return false;
-      return st.includes('解锁') || st.includes('Yes') || st.includes('仅自制');
-    };
-
-    const unlocked = isUnlocked(s4?.status) || isUnlocked(s6?.status);
-    const region = s4?.region || s6?.region;
+    const candidates = [s4, s6].filter(Boolean).map(service => classifyMediaUnlock(service));
+    const rank = { unlocked: 4, dns: 3, limited: 2, blocked: 1, unknown: 0 };
+    const item = candidates.sort((a, b) => rank[b.state] - rank[a.state])[0]!;
 
     if (svc.toLowerCase().includes('chatgpt') || svc.toLowerCase().includes('claude') || svc.toLowerCase().includes('openai')) {
-      aiSummary[svc] = { unlocked, region };
+      aiSummary[svc] = item;
     } else {
-      mediaSummary[svc] = { unlocked, region };
+      mediaSummary[svc] = item;
     }
   }
 

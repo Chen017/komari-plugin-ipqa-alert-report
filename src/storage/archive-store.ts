@@ -12,7 +12,40 @@ export function getIpqaDir(): string {
 }
 
 export function getNodeDir(uuid: string): string {
-  return path.join(getIpqaDir(), 'nodes', uuid);
+  if (!isValidNodeId(uuid)) throw new Error('Invalid IPQA node identifier');
+  const root = path.resolve(getIpqaDir(), 'nodes');
+  const dir = path.resolve(root, uuid);
+  if (!dir.startsWith(root + path.sep)) throw new Error('Invalid IPQA node path');
+  return dir;
+}
+
+export function isValidNodeId(uuid: unknown): uuid is string {
+  return typeof uuid === 'string' && /^[a-zA-Z0-9_-]+$/.test(uuid);
+}
+
+export function isValidArchiveDate(date: unknown): date is string {
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  const parsed = new Date(`${date}T00:00:00Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date;
+}
+
+export function readArchiveTimes(uuid: string): Record<string, number> {
+  return safeReadJson<Record<string, number>>(path.join(getNodeDir(uuid), 'raw-times.json')) ?? {};
+}
+
+export function saveArchiveTimes(uuid: string, times: Record<string, number>): void {
+  safeWriteJson(path.join(getNodeDir(uuid), 'raw-times.json'), times);
+}
+
+/** Replace derived daily files only after the complete new set has been written. */
+export function replaceDailyReports(uuid: string, reports: IpqaDailyPairedReport[]): void {
+  if (reports.length === 0) return;
+  const dates = new Set(reports.map(report => report.date));
+  for (const report of reports) saveDailyReport(uuid, report);
+  safeWriteJson(path.join(getNodeDir(uuid), 'latest.json'), reports[0]);
+  for (const date of listDailyDates(uuid)) {
+    if (!dates.has(date)) fs.unlinkSync(path.join(getNodeDir(uuid), 'daily', `${date}.json`));
+  }
 }
 
 /**
@@ -110,6 +143,7 @@ export function readRawArchive(
  * and updates latest.json if this is the newest date.
  */
 export function saveDailyReport(uuid: string, report: IpqaDailyPairedReport): void {
+  if (!isValidArchiveDate(report.date)) throw new Error('Invalid IPQA archive date');
   const dailyPath = path.join(getNodeDir(uuid), 'daily', `${report.date}.json`);
   safeWriteJson(dailyPath, report);
 
@@ -125,6 +159,7 @@ export function saveDailyReport(uuid: string, report: IpqaDailyPairedReport): vo
  * Gets a paired daily report for a node on a given date.
  */
 export function getDailyReport(uuid: string, date: string): IpqaDailyPairedReport | null {
+  if (!isValidNodeId(uuid) || !isValidArchiveDate(date)) return null;
   const dailyPath = path.join(getNodeDir(uuid), 'daily', `${date}.json`);
   return safeReadJson<IpqaDailyPairedReport>(dailyPath);
 }
@@ -133,6 +168,7 @@ export function getDailyReport(uuid: string, date: string): IpqaDailyPairedRepor
  * Gets the latest paired daily report for a node.
  */
 export function getLatestDailyReport(uuid: string): IpqaDailyPairedReport | null {
+  if (!isValidNodeId(uuid)) return null;
   const latestPath = path.join(getNodeDir(uuid), 'latest.json');
   return safeReadJson<IpqaDailyPairedReport>(latestPath);
 }
@@ -141,6 +177,7 @@ export function getLatestDailyReport(uuid: string): IpqaDailyPairedReport | null
  * Lists all available daily archive dates for a node, newest first.
  */
 export function listDailyDates(uuid: string): string[] {
+  if (!isValidNodeId(uuid)) return [];
   const dailyDir = path.join(getNodeDir(uuid), 'daily');
   if (!fs.existsSync(dailyDir)) return [];
   try {
