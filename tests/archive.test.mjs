@@ -162,6 +162,12 @@ test('archive-normalize: cleanRegion preserves full identifiers like ALISG', () 
   assert.strictEqual(cleanRegion('--'), '--');
   assert.strictEqual(cleanRegion('null'), '--');
   assert.strictEqual(cleanRegion(null), '--');
+
+  // Verify normalization fallback for legacy/truncated TikTok archive
+  const normOld = normalizeRawIpqa({ Media: { TikTok: { status: '解锁', region: 'AL', Region: 'ALISG' } } }, 'v4', '2026-09-21_040000.json');
+  assert.strictEqual(normOld.media.TikTok.region, 'ALISG');
+  const normOldOnlyAl = normalizeRawIpqa({ Media: { TikTok: { status: '解锁', region: 'AL' } } }, 'v4', '2026-09-21_040000.json');
+  assert.strictEqual(normOldOnlyAl.media.TikTok.region, 'ALISG');
 });
 
 test('archive-pair: daily pairing and duplicate same-date selection', () => {

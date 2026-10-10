@@ -187,11 +187,14 @@ export function normalizeRawIpqa(
     if (serviceData && typeof serviceData === 'object') {
       const sObj = serviceData as Record<string, unknown>;
       const status = typeof sObj.Status === 'string' ? sObj.Status : (typeof sObj.status === 'string' ? sObj.status : undefined);
-      const region = cleanRegion(sObj.Region ?? sObj.region);
+      let region = cleanRegion(sObj.Region ?? sObj.region);
+      if (service.toLowerCase().includes('tiktok') && (region === 'AL' || /ALISG/i.test(String(sObj.Region ?? sObj.region)))) {
+        region = 'ALISG';
+      }
       media[service] = {
+        ...sObj,
         status,
         region: region === '--' ? undefined : region,
-        ...sObj,
       };
     }
   }
