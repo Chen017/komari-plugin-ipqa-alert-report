@@ -12,6 +12,7 @@ import {
 import {
   normalizeRawIpqa,
   getReportRiskCategory,
+  cleanRegion,
 } from '../src/ipqa/archive-normalize.ts';
 import { pairDailyReports } from '../src/ipqa/archive-pair.ts';
 import { compareDailyReports } from '../src/ipqa/archive-diff.ts';
@@ -118,6 +119,7 @@ test('archive-normalize: normalization and unknown-field preservation', () => {
     },
     Media: {
       Netflix: { Status: '解锁', Region: '[US]' },
+      TikTok: { Status: '解锁', Region: '[ALISG]' },
       ChatGPT: { Status: '解锁' },
     },
     Mail: {
@@ -138,6 +140,7 @@ test('archive-normalize: normalization and unknown-field preservation', () => {
   assert.strictEqual(normalized.info.country, 'United States');
   assert.strictEqual(normalized.scores.IPQS, 12);
   assert.strictEqual(normalized.media.Netflix.region, 'US'); // Cleaned
+  assert.strictEqual(normalized.media.TikTok.region, 'ALISG'); // Cleaned without truncating to AL
   assert.strictEqual(normalized.media.ChatGPT.status, '解锁');
 
   // Unknown field preserved in extra
@@ -146,6 +149,19 @@ test('archive-normalize: normalization and unknown-field preservation', () => {
 
   const risk = getReportRiskCategory(normalized);
   assert.strictEqual(risk.category, 'Low');
+});
+
+test('archive-normalize: cleanRegion preserves full identifiers like ALISG', () => {
+  assert.strictEqual(cleanRegion('[ALISG]'), 'ALISG');
+  assert.strictEqual(cleanRegion('ALISG'), 'ALISG');
+  assert.strictEqual(cleanRegion('alisg'), 'ALISG');
+  assert.strictEqual(cleanRegion('\x1b[32m[ALISG]\x1b[0m'), 'ALISG');
+  assert.strictEqual(cleanRegion('[US]'), 'US');
+  assert.strictEqual(cleanRegion('  [HK]  '), 'HK');
+  assert.strictEqual(cleanRegion('SG'), 'SG');
+  assert.strictEqual(cleanRegion('--'), '--');
+  assert.strictEqual(cleanRegion('null'), '--');
+  assert.strictEqual(cleanRegion(null), '--');
 });
 
 test('archive-pair: daily pairing and duplicate same-date selection', () => {

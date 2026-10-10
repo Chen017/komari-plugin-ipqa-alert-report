@@ -23,12 +23,30 @@ export function cleanRegion(raw: unknown): string {
   if (!str || str === 'null' || str === '--') return '--';
 
   // Strip ANSI color codes
-  const stripped = str.replace(/\x1b\[[0-9;]*m/g, '').replace(/\[([A-Za-z]{2})\]/, '$1');
-  const match = stripped.match(/([A-Za-z]{2})/);
-  if (match) {
-    return match[1]!.toUpperCase();
+  const stripped = str
+    .replace(/\x1b\[[0-9;]*m/g, '')
+    .replace(/\\033\[[0-9;]*m/g, '')
+    .trim();
+
+  // 1. If wrapped in brackets e.g. [US], [ALISG], [HK], extract the inner content
+  const bracketMatch = stripped.match(/^\[([A-Za-z0-9_-]+)\]$/);
+  if (bracketMatch && bracketMatch[1]) {
+    return bracketMatch[1].toUpperCase();
   }
-  return stripped.trim() || '--';
+
+  // 2. If it's a clean alphanumeric code (e.g. US, SG, ALISG, US-CA)
+  if (/^[A-Za-z0-9_-]+$/.test(stripped)) {
+    return stripped.toUpperCase();
+  }
+
+  // 3. Standalone 2-letter country code bounded by non-letters (e.g. "US-CA" or " [HK] ")
+  const boundaryMatch = stripped.match(/(?:^|[^A-Za-z])([A-Za-z]{2})(?:[^A-Za-z]|$)/);
+  if (boundaryMatch && boundaryMatch[1]) {
+    return boundaryMatch[1].toUpperCase();
+  }
+
+  const cleaned = stripped.replace(/[\[\]]/g, '').trim();
+  return cleaned ? cleaned.toUpperCase() : '--';
 }
 
 /**
