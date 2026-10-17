@@ -7,11 +7,11 @@
 [![Komari Emerald Ecosystem](https://img.shields.io/badge/Komari%20Emerald-Ecosystem-10b981)](https://github.com/Chen017/komari-emerald-suite)
 
 > [!IMPORTANT]
-> 本插件需要目标 VPS 已安装 [IP-Quality-Archive](https://github.com/Chen017/IP-Quality-Archive)。
->
-> 推荐搭配 [Komari Emerald Insights](https://github.com/Chen017/komari-theme-emerald-insights) 使用，可在 Resource Insights 中直接查看 IPQA 概览、风险矩阵、流媒体解锁矩阵与节点历史档案。
+> **前置要求与强烈推荐搭配**：
+> 1. **VPS 采集端前置要求**：本插件需要目标 VPS 已安装并运行 [IP-Quality-Archive](https://github.com/Chen017/IP-Quality-Archive)。未安装 IPQA 的 VPS 节点无法同步归档数据或生成检测日志，请务必先前往安装。
+> 2. **强烈推荐搭配主题**：本插件主要负责后台归档数据增量同步与通知渠道告警。**强烈推荐搭配安装配套主题 [Komari Emerald Insights（翡翠洞察）](https://github.com/Chen017/komari-theme-emerald-insights)**，可在前端「资源概览」中直接查看 IPQA 集群质量大盘、多引擎风控评分矩阵、流媒体/AI 解锁详情及逐日历史档案！
 
-本插件为 Komari 提供 IP-Quality-Archive 集成：一方面作为 **数据提供方**，增量同步 VPS 端的 IPQA 历史归档，另一方面支持语义变更追踪与定时聚合告警推送。
+本插件将各服务器 IP Quality 的流媒体/AI 解锁情况、风控评分变动、IP 归属与邮件黑名单变化等汇总，直接同步到 Komari 支持的通知渠道（如 Telegram 等）；同时增量同步 VPS 端 IPQA 历史归档并暴露只读 API，供前端主题呈现。本项目基于开源项目 [IP-Quality-Archive](https://github.com/Chen017/IP-Quality-Archive)，必须在被监控 VPS 安装该项目方可使用。
 
 ---
 
