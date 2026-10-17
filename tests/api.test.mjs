@@ -147,4 +147,84 @@ test('api routes: registration and read-only cache endpoints', async () => {
     await handler(req, res);
     assert.strictEqual(res.statusCode, 404);
   }
+
+  // 7. Test /overview with ?uuids= query parameter
+  {
+    const req = { url: '/api/plugin/ipqa-alert-report/v1/overview?uuids=node-tokyo,node-missing' };
+    const res = createMockRes();
+    const handler = routes.get('GET:/api/plugin/ipqa-alert-report/v1/overview');
+    await handler(req, res);
+    assert.strictEqual(res.statusCode, 200);
+    const data = JSON.parse(res.body);
+    assert.strictEqual(data.total_nodes, 1);
+    assert.strictEqual(data.nodes.length, 1);
+    assert.strictEqual(data.nodes[0].uuid, 'node-tokyo');
+  }
+
+  // 8. Test automatic pruning of deleted server via server.call('common:getNodes')
+  {
+    const rpcMethods = new Map();
+    const serverWithLiveNodes = {
+      registerRPC: (name, fn) => { rpcMethods.set(name, fn); },
+      route: () => {},
+      call: async (method) => {
+        if (method === 'common:getNodes') {
+          // Komari only has 'node-active', 'node-tokyo' was deleted!
+          return [{ uuid: 'node-active', name: 'Active VPS' }];
+        }
+        return null;
+      },
+    };
+
+    saveFleetOverview({
+      schema_version: 1,
+      updated_at: '2026-09-21T12:00:00Z',
+      total_nodes: 2,
+      ipqa_nodes: 2,
+      nodes_with_risk: 0,
+      nodes_with_changes_today: 0,
+      latest_archive_date: '2026-09-21',
+      nodes: [
+        {
+          uuid: 'node-tokyo', // deleted in Komari!
+          name: 'Tokyo VPS',
+          status: 'ok',
+          latest_date: '2026-09-21',
+          has_ipv4: true,
+          has_ipv6: false,
+          highest_risk: { category: 'Low', source: 'IPQS' },
+          media_summary: {},
+          ai_summary: {},
+          changes_today: 0,
+        },
+        {
+          uuid: 'node-active', // still exists!
+          name: 'Active VPS',
+          status: 'ok',
+          latest_date: '2026-09-21',
+          has_ipv4: true,
+          has_ipv6: false,
+          highest_risk: { category: 'Low', source: 'IPQS' },
+          media_summary: {},
+          ai_summary: {},
+          changes_today: 0,
+        },
+      ],
+    });
+
+    registerApiRoutes(serverWithLiveNodes);
+    const getOverviewRpc = rpcMethods.get('plugin:ipqaGetOverview');
+    assert.ok(getOverviewRpc);
+
+    const prunedOverview = await getOverviewRpc();
+    assert.strictEqual(prunedOverview.total_nodes, 1);
+    assert.strictEqual(prunedOverview.nodes.length, 1);
+    assert.strictEqual(prunedOverview.nodes[0].uuid, 'node-active');
+
+    // Verify persisted fleet overview was also pruned
+    const { getFleetOverview } = await import('../src/storage/archive-store.ts');
+    const persisted = getFleetOverview();
+    assert.strictEqual(persisted.total_nodes, 1);
+    assert.strictEqual(persisted.nodes[0].uuid, 'node-active');
+  }
 });

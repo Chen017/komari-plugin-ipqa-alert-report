@@ -6,7 +6,9 @@ import {
   listDailyDates,
   isValidNodeId,
   isValidArchiveDate,
+  saveFleetOverview,
 } from '../storage/archive-store.ts';
+import { fetchAllNodes } from '../nodes.ts';
 
 const PLUGIN_VERSION = '0.2.2';
 const API_PREFIX = '/api/plugin/ipqa-alert-report/v1';
@@ -70,7 +72,26 @@ export function handleGetCapabilities() {
   };
 }
 
-export function handleGetOverview() {
+export function filterFleetOverview(overview: any, filterUuids?: string[]): any {
+  if (!overview || !Array.isArray(overview.nodes)) {
+    return overview;
+  }
+  if (!Array.isArray(filterUuids) || filterUuids.length === 0) {
+    return overview;
+  }
+  const set = new Set(filterUuids);
+  const filteredNodes = overview.nodes.filter((n: any) => set.has(n.uuid));
+  return {
+    ...overview,
+    total_nodes: filteredNodes.length,
+    ipqa_nodes: filteredNodes.filter((n: any) => n.status !== 'no_archive').length,
+    nodes_with_risk: filteredNodes.filter((n: any) => n.highest_risk && n.highest_risk.category !== 'Unknown' && n.highest_risk.category !== 'None').length,
+    nodes_with_changes_today: filteredNodes.filter((n: any) => (n.changes_today ?? 0) > 0).length,
+    nodes: filteredNodes,
+  };
+}
+
+export function handleGetOverview(filterUuids?: string[]) {
   const overview = getFleetOverview();
   if (!overview) {
     return {
@@ -84,11 +105,60 @@ export function handleGetOverview() {
       nodes: [],
     };
   }
-  return overview;
+  return filterFleetOverview(overview, filterUuids);
 }
 
-export function handleGetNodes() {
-  const overview = handleGetOverview();
+export async function handleGetOverviewAsync(server?: ServerContext, filterUuids?: string[]) {
+  let overview = getFleetOverview();
+  if (!overview) {
+    return {
+      schema_version: 1,
+      updated_at: new Date().toISOString(),
+      total_nodes: 0,
+      ipqa_nodes: 0,
+      nodes_with_risk: 0,
+      nodes_with_changes_today: 0,
+      latest_archive_date: null,
+      nodes: [],
+    };
+  }
+
+  // Prune any deleted nodes from the persisted fleet overview if Komari server context is provided
+  if (server && typeof server.call === 'function') {
+    try {
+      const liveNodes = await fetchAllNodes(server);
+      if (Array.isArray(liveNodes)) {
+        const liveSet = new Set(liveNodes.map(n => n.uuid));
+        const initialCount = overview.nodes.length;
+        const prunedNodes = overview.nodes.filter((n: any) => liveSet.has(n.uuid));
+        if (prunedNodes.length !== initialCount) {
+          overview = {
+            ...overview,
+            updated_at: new Date().toISOString(),
+            total_nodes: prunedNodes.length,
+            ipqa_nodes: prunedNodes.filter((n: any) => n.status !== 'no_archive').length,
+            nodes_with_risk: prunedNodes.filter((n: any) => n.highest_risk && n.highest_risk.category !== 'Unknown' && n.highest_risk.category !== 'None').length,
+            nodes_with_changes_today: prunedNodes.filter((n: any) => (n.changes_today ?? 0) > 0).length,
+            nodes: prunedNodes,
+          };
+          saveFleetOverview(overview);
+        }
+      }
+    } catch {
+      // Graceful fallback to cached overview if RPC fails
+    }
+  }
+
+  return filterFleetOverview(overview, filterUuids);
+}
+
+export function handleGetNodes(filterUuids?: string[]) {
+  const overview = handleGetOverview(filterUuids);
+  return overview.nodes ?? [];
+}
+
+export async function handleGetNodesAsync(server?: ServerContext, filterUuids?: string[]) {
+  const overview = await handleGetOverviewAsync(server, filterUuids);
   return overview.nodes ?? [];
 }
 
@@ -175,9 +245,9 @@ export function registerApiRoutes(server: ServerContext): void {
       // @ts-expect-error server.registerRPC
       server.registerRPC('plugin:ipqaGetCapabilities', async () => handleGetCapabilities());
       // @ts-expect-error server.registerRPC
-      server.registerRPC('plugin:ipqaGetOverview', async () => handleGetOverview());
+      server.registerRPC('plugin:ipqaGetOverview', async (p: any) => handleGetOverviewAsync(server, p?.uuids));
       // @ts-expect-error server.registerRPC
-      server.registerRPC('plugin:ipqaGetNodes', async () => handleGetNodes());
+      server.registerRPC('plugin:ipqaGetNodes', async (p: any) => handleGetNodesAsync(server, p?.uuids));
       // @ts-expect-error server.registerRPC
       server.registerRPC('plugin:ipqaGetNodeLatest', async (p: any) => handleGetNodeLatest(p?.uuid));
       // @ts-expect-error server.registerRPC
@@ -206,6 +276,10 @@ export function registerApiRoutes(server: ServerContext): void {
       const { pathname, query, sendJson } = getRequestAndResponse(arg1, arg2);
       sendJsonFn = sendJson;
 
+      const uuidsParam = query.uuids
+        ? query.uuids.split(',').map((s: string) => s.trim()).filter(Boolean)
+        : undefined;
+
       // 1. /capabilities
       if (pathname.endsWith('/capabilities')) {
         sendJson(200, handleGetCapabilities(), 300);
@@ -214,13 +288,15 @@ export function registerApiRoutes(server: ServerContext): void {
 
       // 2. /overview
       if (pathname.endsWith('/overview')) {
-        sendJson(200, handleGetOverview(), 60);
+        const overview = await handleGetOverviewAsync(server, uuidsParam);
+        sendJson(200, overview, 10);
         return;
       }
 
       // 3. /nodes
       if (pathname.endsWith('/nodes')) {
-        sendJson(200, handleGetNodes(), 60);
+        const nodes = await handleGetNodesAsync(server, uuidsParam);
+        sendJson(200, nodes, 10);
         return;
       }
 
