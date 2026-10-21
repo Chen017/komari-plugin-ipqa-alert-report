@@ -47,7 +47,7 @@ function compareSingleVersion(
       nodeUuid,
       ipVersion: ipVer,
       category: 'type',
-      severity: 'CRITICAL',
+      severity: 'WARNING',
       field: 'info.type',
       before: prev.info.type,
       after: curr.info.type,
