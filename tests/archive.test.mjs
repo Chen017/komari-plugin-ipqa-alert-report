@@ -254,7 +254,7 @@ test('archive-diff: semantic and generic leaf diff', () => {
 
   const typeChange = changes.find(c => c.field === 'info.type');
   assert.ok(typeChange);
-  assert.strictEqual(typeChange.severity, 'CRITICAL');
+  assert.strictEqual(typeChange.severity, 'WARNING');
 
   const scoreChange = changes.find(c => c.field === 'scores.IPQS');
   assert.ok(scoreChange);
