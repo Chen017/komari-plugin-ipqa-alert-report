@@ -1,6 +1,6 @@
 {
   "name": "komari-plugin-ipqa-alert-report",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "将服务器 IP Quality 的流媒体/AI 解锁与风控评分变动同步到 Komari 通知渠道。需 VPS 安装 IP-Quality-Archive，推荐搭配 Emerald Insights 主题。",
   "type": "module",
   "scripts": {
