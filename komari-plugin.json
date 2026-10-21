@@ -11,7 +11,7 @@
     "zh_CN": "将服务器 IP Quality 的流媒体/AI 解锁情况、风控评分变动等直接汇总并同步到 Komari 支持的通知渠道。本项目基于开源项目 IP-Quality-Archive，必须在被监控 VPS 安装该项目方可使用；强烈推荐搭配 Komari Emerald Insights 主题以在前端查阅完整图表与历史档案。",
     "en": "Syncs server IP Quality streaming/AI unlock status and risk score changes directly to Komari-supported notification channels. Built upon the open-source project IP-Quality-Archive (required on monitored VPS nodes); strongly recommended to pair with Komari Emerald Insights theme for rich frontend dashboards and historical archives."
   },
-  "version": "0.2.2",
+  "version": "0.2.3",
   "komari": ">=1.4.3",
   "entry": "script.js",
   "icon": "assets/icon.svg",
