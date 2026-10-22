@@ -35,7 +35,7 @@ test('api routes: registration and read-only cache endpoints', async () => {
 
   // 2. Test /capabilities
   {
-    const req = { url: '/api/plugin/ipqa-alert-report/v1/capabilities' };
+    const req = { context: { principal: { type: 'user', roles: ['admin'] } }, url: '/api/plugin/ipqa-alert-report/v1/capabilities' };
     const res = createMockRes();
     const handler = routes.get('GET:/api/plugin/ipqa-alert-report/v1/capabilities');
     await handler(req, res);
@@ -74,7 +74,7 @@ test('api routes: registration and read-only cache endpoints', async () => {
     };
     saveFleetOverview(fleetOverview);
 
-    const req = { url: '/api/plugin/ipqa-alert-report/v1/overview' };
+    const req = { context: { principal: { type: 'user', roles: ['admin'] } }, url: '/api/plugin/ipqa-alert-report/v1/overview' };
     const res = createMockRes();
     const handler = routes.get('GET:/api/plugin/ipqa-alert-report/v1/overview');
     await handler(req, res);
@@ -118,7 +118,7 @@ test('api routes: registration and read-only cache endpoints', async () => {
     };
     saveDailyReport('node-tokyo', dailyReport);
 
-    const req = { url: '/api/plugin/ipqa-alert-report/v1/nodes/node-tokyo/latest' };
+    const req = { context: { principal: { type: 'user', roles: ['admin'] } }, url: '/api/plugin/ipqa-alert-report/v1/nodes/node-tokyo/latest' };
     const res = createMockRes();
     const handler = routes.get('GET:/api/plugin/ipqa-alert-report/v1/nodes/*action') || routes.get('GET:/api/plugin/ipqa-alert-report/v1/nodes/*');
     await handler(req, res);
@@ -130,7 +130,7 @@ test('api routes: registration and read-only cache endpoints', async () => {
 
   // 5. Test /nodes/:uuid/archives/:date
   {
-    const req = { url: '/api/plugin/ipqa-alert-report/v1/nodes/node-tokyo/archives/2026-09-21' };
+    const req = { context: { principal: { type: 'user', roles: ['admin'] } }, url: '/api/plugin/ipqa-alert-report/v1/nodes/node-tokyo/archives/2026-09-21' };
     const res = createMockRes();
     const handler = routes.get('GET:/api/plugin/ipqa-alert-report/v1/nodes/*action') || routes.get('GET:/api/plugin/ipqa-alert-report/v1/nodes/*');
     await handler(req, res);
@@ -141,7 +141,7 @@ test('api routes: registration and read-only cache endpoints', async () => {
 
   // 6. Test not found node
   {
-    const req = { url: '/api/plugin/ipqa-alert-report/v1/nodes/non-existent/latest' };
+    const req = { context: { principal: { type: 'user', roles: ['admin'] } }, url: '/api/plugin/ipqa-alert-report/v1/nodes/non-existent/latest' };
     const res = createMockRes();
     const handler = routes.get('GET:/api/plugin/ipqa-alert-report/v1/nodes/*action') || routes.get('GET:/api/plugin/ipqa-alert-report/v1/nodes/*');
     await handler(req, res);
@@ -150,7 +150,7 @@ test('api routes: registration and read-only cache endpoints', async () => {
 
   // 7. Test /overview with ?uuids= query parameter
   {
-    const req = { url: '/api/plugin/ipqa-alert-report/v1/overview?uuids=node-tokyo,node-missing' };
+    const req = { context: { principal: { type: 'user', roles: ['admin'] } }, url: '/api/plugin/ipqa-alert-report/v1/overview?uuids=node-tokyo,node-missing' };
     const res = createMockRes();
     const handler = routes.get('GET:/api/plugin/ipqa-alert-report/v1/overview');
     await handler(req, res);
@@ -213,10 +213,12 @@ test('api routes: registration and read-only cache endpoints', async () => {
     });
 
     registerApiRoutes(serverWithLiveNodes);
+    const { handleGetOverviewAsync } = await import('../src/api/routes.ts');
     const getOverviewRpc = rpcMethods.get('plugin:ipqaGetOverview');
     assert.ok(getOverviewRpc);
 
-    const prunedOverview = await getOverviewRpc();
+    assert.equal(getOverviewRpc() instanceof Promise, false);
+    const prunedOverview = await handleGetOverviewAsync(serverWithLiveNodes);
     assert.strictEqual(prunedOverview.total_nodes, 1);
     assert.strictEqual(prunedOverview.nodes.length, 1);
     assert.strictEqual(prunedOverview.nodes[0].uuid, 'node-active');

@@ -1,3 +1,4 @@
+import { createRpcJobs } from './rpc-jobs.ts';
 import { registerScheduler, type ServerContext } from './scheduler.ts';
 import { runTestReport } from './test.ts';
 import { registerApiRoutes } from './api/routes.ts';
@@ -122,24 +123,19 @@ export async function load(): Promise<void> {
     console.log('[IPQA] Admin sync endpoints registered at /api/plugin/ipqa-alert-report/sync');
   }
 
+  const rpcJobs = createRpcJobs();
   // Register manual test RPC
   // @ts-expect-error server.registerRPC
   if (typeof serverInstance.registerRPC === 'function') {
     // @ts-expect-error server.registerRPC
-    serverInstance.registerRPC('plugin:ipqaTestRun', async (params: any) => {
-      return await runTestReport(serverInstance, params || {});
-    });
-    console.log('[IPQA] Test RPC registered: plugin:ipqaTestRun');
-
+    serverInstance.registerRPC('plugin:ipqaTestRun', (params: any) => rpcJobs.submit(() => runTestReport(serverInstance, params || {})));
     // @ts-expect-error server.registerRPC
-    serverInstance.registerRPC('plugin:ipqaSyncNow', async (params: any) => {
+    serverInstance.registerRPC('plugin:ipqaSyncNow', (params: any) => rpcJobs.submit(async () => {
       const { syncIpqaArchives } = await import('./ipqa/archive-sync.ts');
-      return await syncIpqaArchives(serverInstance, {
-        reason: 'manual',
-        selectedNodeUuids: params?.selectedNodeUuids,
-      });
-    });
-    console.log('[IPQA] Sync RPC registered: plugin:ipqaSyncNow');
+      return syncIpqaArchives(serverInstance, { reason: 'manual', selectedNodeUuids: params?.selectedNodeUuids });
+    }));
+    // @ts-expect-error server.registerRPC
+    serverInstance.registerRPC('plugin:ipqaGetJob', (params: any) => rpcJobs.get(String(params?.id || '')));
   }
 
   registerScheduler(serverInstance);
@@ -151,7 +147,7 @@ export async function load(): Promise<void> {
 
   // Register IPQA Versioned Public Read API (Section 25)
   try {
-    registerApiRoutes(serverInstance);
+    registerApiRoutes(serverInstance, (await loadConfig(serverInstance)).min_severity);
   } catch (apiErr) {
     console.warn('[IPQA] Failed to register API routes:', apiErr);
   }

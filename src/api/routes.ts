@@ -1,4 +1,9 @@
+import { formatBeijingDateKey, getBeijingParts } from '../time.ts';
+import { publicAccess, redactPublic } from './public-access.ts';
 import type { ServerContext } from '../scheduler.ts';
+import type { Severity } from '../types.ts';
+import { DEFAULT_CONFIG, normalizeSeverity } from '../config.ts';
+import { getSeverityRank } from '../ipqa.ts';
 import {
   getDailyReport,
   getFleetOverview,
@@ -53,7 +58,7 @@ function getRequestAndResponse(req: any, res: any): {
   const sendJson = (status: number, data: any, maxAgeSeconds = 60) => {
     res.statusCode = status;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.setHeader('Cache-Control', `public, max-age=${maxAgeSeconds}`);
+    res.setHeader('Cache-Control', 'private, no-store');
     res.end(JSON.stringify(data));
   };
 
@@ -76,16 +81,14 @@ export function filterFleetOverview(overview: any, filterUuids?: string[]): any 
   if (!overview || !Array.isArray(overview.nodes)) {
     return overview;
   }
-  if (!Array.isArray(filterUuids) || filterUuids.length === 0) {
-    return overview;
-  }
-  const set = new Set(filterUuids);
-  const filteredNodes = overview.nodes.filter((n: any) => set.has(n.uuid));
+  const set = Array.isArray(filterUuids) ? new Set(filterUuids) : null;
+  const today = formatBeijingDateKey(getBeijingParts(new Date()));
+  const filteredNodes = overview.nodes.filter((n: any) => !set || set.has(n.uuid)).map((n: any) => ({ ...n, changes_today: n.latest_date === today ? n.changes_today : 0 }));
   return {
     ...overview,
-    total_nodes: filteredNodes.length,
+    total_nodes: set ? filteredNodes.length : overview.total_nodes,
     ipqa_nodes: filteredNodes.filter((n: any) => n.status !== 'no_archive').length,
-    nodes_with_risk: filteredNodes.filter((n: any) => n.highest_risk && n.highest_risk.category !== 'Unknown' && n.highest_risk.category !== 'None').length,
+    nodes_with_risk: filteredNodes.filter((n: any) => n.highest_risk && ['Medium', 'High', 'Critical'].includes(n.highest_risk.category)).length,
     nodes_with_changes_today: filteredNodes.filter((n: any) => (n.changes_today ?? 0) > 0).length,
     nodes: filteredNodes,
   };
@@ -137,7 +140,7 @@ export async function handleGetOverviewAsync(server?: ServerContext, filterUuids
             updated_at: new Date().toISOString(),
             total_nodes: prunedNodes.length,
             ipqa_nodes: prunedNodes.filter((n: any) => n.status !== 'no_archive').length,
-            nodes_with_risk: prunedNodes.filter((n: any) => n.highest_risk && n.highest_risk.category !== 'Unknown' && n.highest_risk.category !== 'None').length,
+            nodes_with_risk: prunedNodes.filter((n: any) => n.highest_risk && ['Medium', 'High', 'Critical'].includes(n.highest_risk.category)).length,
             nodes_with_changes_today: prunedNodes.filter((n: any) => (n.changes_today ?? 0) > 0).length,
             nodes: prunedNodes,
           };
@@ -185,14 +188,17 @@ export function handleGetNodeArchive(uuid: string, date: string) {
   return getDailyReport(uuid, date);
 }
 
-export function handleGetNodeChanges(uuid: string) {
+export function handleGetNodeChanges(uuid: string, minSeverity: Severity = 'INFO') {
   if (!uuid) return { uuid, changes: [] };
   const dates = listDailyDates(uuid).slice(0, 30);
   const changes = [];
+  const minRank = getSeverityRank(minSeverity);
   for (const d of dates) {
     const rep = getDailyReport(uuid, d);
     if (rep?.changesFromPrevious?.length) {
-      changes.push(...rep.changesFromPrevious);
+      changes.push(...rep.changesFromPrevious.filter(change =>
+        getSeverityRank(change.severity) >= minRank
+      ));
     }
   }
   return { uuid, changes };
@@ -237,29 +243,39 @@ export function handleGetNodeMediaHistory(uuid: string) {
  * Registers all versioned public read API endpoints (Section 25).
  * Registers both HTTP endpoints and RPC methods for maximum compatibility with all Komari environments.
  */
-export function registerApiRoutes(server: ServerContext): void {
+export function registerApiRoutes(server: ServerContext, initialSeverity: Severity = 'INFO'): void {
+  let cachedSeverity = initialSeverity;
+  const getMinSeverity = async (): Promise<Severity> => {
+    if (typeof server.getConfig !== 'function') return DEFAULT_CONFIG.min_severity;
+    const config = await server.getConfig();
+    if (!config || typeof config !== 'object') {
+      throw new Error('Unable to read plugin severity configuration');
+    }
+    cachedSeverity = normalizeSeverity(config.min_severity);
+    return cachedSeverity;
+  };
   // 1. Register RPC methods (Komari native RPC)
   // @ts-expect-error server.registerRPC
   if (typeof server.registerRPC === 'function') {
     try {
       // @ts-expect-error server.registerRPC
-      server.registerRPC('plugin:ipqaGetCapabilities', async () => handleGetCapabilities());
+      server.registerRPC('plugin:ipqaGetCapabilities', () => handleGetCapabilities());
       // @ts-expect-error server.registerRPC
-      server.registerRPC('plugin:ipqaGetOverview', async (p: any) => handleGetOverviewAsync(server, p?.uuids));
+      server.registerRPC('plugin:ipqaGetOverview', (p: any) => handleGetOverview(p?.uuids));
       // @ts-expect-error server.registerRPC
-      server.registerRPC('plugin:ipqaGetNodes', async (p: any) => handleGetNodesAsync(server, p?.uuids));
+      server.registerRPC('plugin:ipqaGetNodes', (p: any) => handleGetNodes(p?.uuids));
       // @ts-expect-error server.registerRPC
-      server.registerRPC('plugin:ipqaGetNodeLatest', async (p: any) => handleGetNodeLatest(p?.uuid));
+      server.registerRPC('plugin:ipqaGetNodeLatest', (p: any) => handleGetNodeLatest(p?.uuid));
       // @ts-expect-error server.registerRPC
-      server.registerRPC('plugin:ipqaGetNodeArchives', async (p: any) => handleGetNodeArchives(p?.uuid, p?.limit, p?.before));
+      server.registerRPC('plugin:ipqaGetNodeArchives', (p: any) => handleGetNodeArchives(p?.uuid, p?.limit, p?.before));
       // @ts-expect-error server.registerRPC
-      server.registerRPC('plugin:ipqaGetNodeArchive', async (p: any) => handleGetNodeArchive(p?.uuid, p?.date));
+      server.registerRPC('plugin:ipqaGetNodeArchive', (p: any) => handleGetNodeArchive(p?.uuid, p?.date));
       // @ts-expect-error server.registerRPC
-      server.registerRPC('plugin:ipqaGetNodeChanges', async (p: any) => handleGetNodeChanges(p?.uuid));
+      server.registerRPC('plugin:ipqaGetNodeChanges', (p: any) => handleGetNodeChanges(p?.uuid, cachedSeverity));
       // @ts-expect-error server.registerRPC
-      server.registerRPC('plugin:ipqaGetNodeScoreHistory', async (p: any) => handleGetNodeScoreHistory(p?.uuid));
+      server.registerRPC('plugin:ipqaGetNodeScoreHistory', (p: any) => handleGetNodeScoreHistory(p?.uuid));
       // @ts-expect-error server.registerRPC
-      server.registerRPC('plugin:ipqaGetNodeMediaHistory', async (p: any) => handleGetNodeMediaHistory(p?.uuid));
+      server.registerRPC('plugin:ipqaGetNodeMediaHistory', (p: any) => handleGetNodeMediaHistory(p?.uuid));
       console.log('[IPQA] Read-only RPC methods registered under plugin:ipqa*');
     } catch (rpcErr) {
       console.warn('[IPQA] Failed to register RPC methods:', rpcErr);
@@ -273,8 +289,10 @@ export function registerApiRoutes(server: ServerContext): void {
   const handler = async (arg1: any, arg2: any) => {
     let sendJsonFn: (status: number, data: any, maxAgeSeconds?: number) => void = () => {};
     try {
-      const { pathname, query, sendJson } = getRequestAndResponse(arg1, arg2);
-      sendJsonFn = sendJson;
+      const { pathname, query, sendJson: rawSendJson } = getRequestAndResponse(arg1, arg2);
+      sendJsonFn = rawSendJson;
+      const visible = pathname.endsWith('/capabilities') ? null : await publicAccess(server, arg1);
+      const sendJson = (status: number, data: any, age = 0) => rawSendJson(status, visible === null ? data : redactPublic(data), age);
 
       const uuidsParam = query.uuids
         ? query.uuids.split(',').map((s: string) => s.trim()).filter(Boolean)
@@ -289,14 +307,14 @@ export function registerApiRoutes(server: ServerContext): void {
       // 2. /overview
       if (pathname.endsWith('/overview')) {
         const overview = await handleGetOverviewAsync(server, uuidsParam);
-        sendJson(200, overview, 10);
+        sendJson(200, visible === null ? overview : filterFleetOverview(overview, [...visible]), 10);
         return;
       }
 
       // 3. /nodes
       if (pathname.endsWith('/nodes')) {
         const nodes = await handleGetNodesAsync(server, uuidsParam);
-        sendJson(200, nodes, 10);
+        sendJson(200, visible === null ? nodes : nodes.filter((node: any) => visible.has(node.uuid)), 10);
         return;
       }
 
@@ -308,6 +326,7 @@ export function registerApiRoutes(server: ServerContext): void {
         const parts = sub.split('/');
         const uuid = parts[0];
         const action = parts[1];
+        if (visible !== null && !visible.has(uuid)) { sendJson(404, { error: 'Node not found' }); return; }
 
         if (!uuid) {
           sendJson(400, { error: 'Missing node uuid' });
@@ -345,8 +364,8 @@ export function registerApiRoutes(server: ServerContext): void {
 
         // 4c. /nodes/:uuid/changes
         if (action === 'changes') {
-          const result = handleGetNodeChanges(uuid);
-          sendJson(200, result, 60);
+          const result = handleGetNodeChanges(uuid, await getMinSeverity());
+          sendJson(200, result, 0);
           return;
         }
 

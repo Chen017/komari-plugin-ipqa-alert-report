@@ -6,6 +6,7 @@ import type {
   IpqaSemanticChange,
   NormalizedIpVersion,
 } from './types.ts';
+import { classifyMediaUnlock } from './media-status.ts';
 import { compareScoreTransition } from './risk.ts';
 
 function compareSingleVersion(
@@ -90,8 +91,10 @@ function compareSingleVersion(
     const allEngines = new Set([...Object.keys(bEngines), ...Object.keys(aEngines)]);
 
     for (const eng of allEngines) {
-      const bVal = Boolean(bEngines[eng]);
-      const aVal = Boolean(aEngines[eng]);
+      const booleanValue = (value: unknown) => value === true || value === 'true' ? true : value === false || value === 'false' ? false : null;
+      const bVal = booleanValue(bEngines[eng]);
+      const aVal = booleanValue(aEngines[eng]);
+      if (bVal === null || aVal === null) continue;
       if (!bVal && aVal) {
         changes.push({
           date,
@@ -128,7 +131,10 @@ function compareSingleVersion(
 
     // Status change
     if (b?.status && a?.status && b.status !== a.status) {
-      const isDowngrade = a.status.includes('失败') || a.status.includes('屏蔽') || a.status.includes('仅自制');
+      const ranks = { unknown: 0, blocked: 1, limited: 2, dns: 3, unlocked: 4 };
+      const beforeState = classifyMediaUnlock(b).state;
+      const afterState = classifyMediaUnlock(a).state;
+      const isDowngrade = afterState !== 'unknown' && beforeState !== 'unknown' && ranks[afterState] < ranks[beforeState];
       changes.push({
         date,
         nodeUuid,

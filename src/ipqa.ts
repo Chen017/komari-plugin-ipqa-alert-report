@@ -353,6 +353,8 @@ export function mergeAlerts(
     );
 
     if (isOverlapped) {
+      const primary = cleanSemanticAlerts.find(a => getCrossSourceOverlapKey(a) === overlapKey);
+      if (primary && getSeverityRank(la.level) > getSeverityRank(primary.level)) primary.level = la.level;
       deduplicatedCount++;
     } else {
       keptLegacyAlerts.push(la);

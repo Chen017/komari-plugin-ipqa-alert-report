@@ -27,7 +27,7 @@ test('public archive handlers reject traversal and invalid calendar dates', () =
   registerApiRoutes({ route: (method, url, handler) => routes.set(`${method}:${url}`, handler) });
   const handler = [...routes.entries()].find(([key]) => key.includes('nodes/*'))[1];
   const response = { setHeader() {}, end(value) { this.body = value; } };
-  await handler({ url: '/api/plugin/ipqa-alert-report/v1/nodes/../archives/../../secret' }, response);
+  await handler({ context: { principal: { type: 'user', roles: ['admin'] } }, url: '/api/plugin/ipqa-alert-report/v1/nodes/../archives/../../secret' }, response);
   assert.ok(!response.body.includes('sentinel'));
 }));
 

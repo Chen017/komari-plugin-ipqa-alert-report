@@ -166,7 +166,7 @@ export function buildNodeOverview(node: KomariNode, lastSyncError?: string | nul
     },
     media_summary: latest?.summary.mediaSummary ?? {},
     ai_summary: latest?.summary.aiSummary ?? {},
-    changes_today: latest?.changesFromPrevious?.length ?? 0,
+    changes_today: latest?.date === formatBeijingDateKey(getBeijingParts(now)) ? (latest.changesFromPrevious?.length ?? 0) : 0,
     v4: buildProtocolSummary(latest?.v4),
     v6: buildProtocolSummary(latest?.v6),
   };
@@ -409,6 +409,8 @@ export async function syncIpqaArchives(
   const nodeOverviews: IpqaNodeOverview[] = [];
 
   for (const node of targets) {
+    // Recompute derived classifications after upgrades, even if today's raw cache is current.
+    if (listCachedRawFilenames(node.uuid, 'v4').length || listCachedRawFilenames(node.uuid, 'v6').length) rebuildNodeDailyReports(node.uuid);
     const nodeState = state.archive_sync.nodes[node.uuid];
 
     // For daily sync: if node is already current for today, skip remote execution
@@ -512,7 +514,7 @@ export async function syncIpqaArchives(
     updated_at: new Date().toISOString(),
     total_nodes: configuredTargets.length,
     ipqa_nodes: nodeOverviews.filter(n => n.status === 'ok' || n.status === 'stale' || n.status === 'fresh' || n.status === 'pending_today').length,
-    nodes_with_risk: nodeOverviews.filter(n => n.highest_risk.category === 'High' || n.highest_risk.category === 'Critical').length,
+    nodes_with_risk: nodeOverviews.filter(n => n.highest_risk.category === 'Medium' || n.highest_risk.category === 'High' || n.highest_risk.category === 'Critical').length,
     nodes_with_changes_today: nodeOverviews.filter(n => n.changes_today > 0).length,
     latest_archive_date: nodeOverviews
       .map(n => n.latest_date)
@@ -533,7 +535,7 @@ export async function syncIpqaArchives(
   if (failedCount === 0) {
     state.archive_sync.last_success_at = new Date().toISOString();
   }
-  saveState(state);
+  saveState({ ...loadState(), archive_sync: state.archive_sync });
 
   const finishedAt = new Date().toISOString();
   console.log(

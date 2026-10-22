@@ -172,7 +172,7 @@ export async function runDailyReport(server: ServerContext, now = new Date()): P
         alerts: 0,
         collection_failures: 0,
       };
-      saveState(state);
+      saveState({ ...loadState(), ...state, archive_sync: loadState().archive_sync });
       return;
     }
 
@@ -256,7 +256,7 @@ export async function runDailyReport(server: ServerContext, now = new Date()): P
       state.daily_delivery.pending_legacy_overlap_keys = [
         ...pendingLegacyOverlapKeys,
       ];
-      saveState(state);
+      saveState({ ...loadState(), ...state, archive_sync: loadState().archive_sync });
       console.log('[IPQA] notification sent');
     }
 
@@ -296,7 +296,7 @@ export async function runDailyReport(server: ServerContext, now = new Date()): P
 
     if (retryForLateSemantic) {
       state.last_run_beijing_date = '';
-      saveState(state);
+      saveState({ ...loadState(), ...state, archive_sync: loadState().archive_sync });
       console.log(
         `[IPQA] run partial for Beijing date ${dateKey}; waiting for semantic archive from: ${missingSemanticNodes.map(n => n.name).join(', ')}`
       );
@@ -304,7 +304,7 @@ export async function runDailyReport(server: ServerContext, now = new Date()): P
     }
 
     state.last_run_beijing_date = dateKey;
-    saveState(state);
+    saveState({ ...loadState(), ...state, archive_sync: loadState().archive_sync });
 
     console.log(`[IPQA] run completed for Beijing date ${dateKey}`);
   } catch (error) {
@@ -313,7 +313,7 @@ export async function runDailyReport(server: ServerContext, now = new Date()): P
       state.attempt_date === dateKey ? (state.attempt_count ?? 0) : 0;
     state.attempt_date = dateKey;
     state.attempt_count = currentAttempts + 1;
-    saveState(state);
+    saveState({ ...loadState(), ...state, archive_sync: loadState().archive_sync });
     throw error;
   } finally {
     running = false;
