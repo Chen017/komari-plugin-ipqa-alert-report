@@ -29,7 +29,7 @@ export function isAdminPrincipal(principal: any): boolean {
  * Plugin lifecycle: load()
  */
 export async function load(): Promise<void> {
-  console.log('[IPQA] Loading IPQA Alert Report plugin v0.2.3...');
+  console.log('[IPQA] Loading IPQA Alert Report plugin v0.2.4...');
 
   if (!serverInstance) {
     try {
