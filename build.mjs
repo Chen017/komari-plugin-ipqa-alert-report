@@ -2,8 +2,12 @@ import * as esbuild from 'esbuild';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
+import { execFileSync } from 'node:child_process';
 
 const ROOT_DIR = process.cwd();
+const beta = process.argv.includes('--beta');
+const hash = beta ? execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim() : '';
+const zipName = beta ? `ipqa-alert-report-beta-${hash}.zip` : 'ipqa-alert-report.zip';
 
 console.log('[BUILD] Bundling src/index.ts into script.js...');
 
@@ -148,12 +152,18 @@ function writeZip(files, outPath) {
   fs.writeFileSync(outPath, Buffer.concat(allBuffers));
 }
 
-console.log('[BUILD] Packaging into ipqa-alert-report.zip...');
+console.log(`[BUILD] Packaging into ${zipName}...`);
+
+let manifestData = fs.readFileSync(path.join(ROOT_DIR, 'komari-plugin.json'));
+if (beta) {
+  const manifest = JSON.parse(manifestData.toString('utf8'));
+  manifestData = Buffer.from(JSON.stringify({ ...manifest, version: `${manifest.version}-beta.performance.g${hash}` }, null, 2));
+}
 
 const filesToZip = [
   {
     name: 'komari-plugin.json',
-    data: fs.readFileSync(path.join(ROOT_DIR, 'komari-plugin.json')),
+    data: manifestData,
   },
   {
     name: 'script.js',
@@ -165,7 +175,7 @@ const filesToZip = [
   },
 ];
 
-const zipPath = path.join(ROOT_DIR, 'ipqa-alert-report.zip');
+const zipPath = path.join(ROOT_DIR, zipName);
 writeZip(filesToZip, zipPath);
 
 console.log(`[BUILD] Package created successfully: ${zipPath} (${fs.statSync(zipPath).size} bytes)`);

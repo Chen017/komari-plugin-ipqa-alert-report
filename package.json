@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
+    "build:beta": "node build.mjs --beta",
     "test": "node --experimental-strip-types --test --test-concurrency=1 tests/*.test.mjs"
   },
   "keywords": [

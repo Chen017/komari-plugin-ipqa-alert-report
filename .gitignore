@@ -4,6 +4,7 @@ node_modules/
 # Build artifacts
 script.js
 ipqa-alert-report.zip
+ipqa-alert-report-beta-*.zip
 dist/
 
 # Runtime & persistent state

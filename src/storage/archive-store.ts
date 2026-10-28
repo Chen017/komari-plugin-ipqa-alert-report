@@ -41,7 +41,10 @@ export function saveArchiveTimes(uuid: string, times: Record<string, number>): v
 export function replaceDailyReports(uuid: string, reports: IpqaDailyPairedReport[]): void {
   if (reports.length === 0) return;
   const dates = new Set(reports.map(report => report.date));
-  for (const report of reports) saveDailyReport(uuid, report);
+  for (const report of reports) {
+    if (!isValidArchiveDate(report.date)) throw new Error('Invalid IPQA archive date');
+    safeWriteJson(path.join(getNodeDir(uuid), 'daily', `${report.date}.json`), report);
+  }
   safeWriteJson(path.join(getNodeDir(uuid), 'latest.json'), reports[0]);
   for (const date of listDailyDates(uuid)) {
     if (!dates.has(date)) fs.unlinkSync(path.join(getNodeDir(uuid), 'daily', `${date}.json`));
