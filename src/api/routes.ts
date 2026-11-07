@@ -14,8 +14,8 @@ import {
   saveFleetOverview,
 } from '../storage/archive-store.ts';
 import { fetchAllNodes } from '../nodes.ts';
+import { PLUGIN_VERSION } from '../version.ts';
 
-const PLUGIN_VERSION = '0.2.5';
 const API_PREFIX = '/api/plugin/ipqa-alert-report/v1';
 
 function parseUrl(urlStr: string): { pathname: string; query: Record<string, string> } {

@@ -78,3 +78,7 @@
 ## RPC 任务与公开数据
 
 只读 RPC 返回同步缓存；手动 `plugin:ipqaTestRun` / `plugin:ipqaSyncNow` 返回 `{accepted, job_id}`。使用 `plugin:ipqaGetJob` 并传入 `{id: job_id}` 查询 running/completed/failed 状态。HTTP 手动操作接口仍等待完成后返回。公开归档仅包含可见节点，隐藏 IP 明细；私有站点须登录管理员后读取。
+
+## 安装与开发
+
+从本仓库的 GitHub Releases 下载 `ipqa-alert-report.zip`，在 Komari 管理后台的插件管理中上传。选择已安装 IPQA 的节点，随后可在插件配置中手动测试报告。开发环境、离线验证、打包及手动发布流程见 [工程维护指南](docs/MAINTENANCE.md)。

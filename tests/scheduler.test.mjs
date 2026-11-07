@@ -1,27 +1,16 @@
-import { describe, it, beforeEach, afterEach } from 'node:test';
+import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { useTemporaryStorage } from './fixtures/storage.mjs';
 import { schedulerTick, runDailyReport } from '../src/scheduler.ts';
 import { loadConfig } from '../src/config.ts';
 import { getStateFilePath, saveState, INITIAL_STATE } from '../src/state.ts';
 import { saveDailyReport } from '../src/storage/archive-store.ts';
 
 describe('scheduler.ts - Scheduler Due & Duplicate Prevention', () => {
-  const testStorageDir = path.resolve(process.cwd(), 'storage');
-
-  beforeEach(() => {
+  beforeEach(t => {
+    useTemporaryStorage(t);
     saveState({ ...INITIAL_STATE });
-  });
-
-  afterEach(() => {
-    try {
-      if (fs.existsSync(testStorageDir)) {
-        fs.rmSync(testStorageDir, { recursive: true, force: true });
-      }
-    } catch {
-      // ignore
-    }
   });
 
   it('Test 11: should prevent duplicate execution on the same Beijing date', async () => {

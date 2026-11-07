@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { PluginState } from './types.ts';
+import { writeJsonFile } from './storage/json.ts';
 
 // Komari injects __storageDir__ as a global variable for the plugin's persistent storage
 declare const __storageDir__: string | undefined;
@@ -47,17 +48,11 @@ export function loadState(): PluginState {
 }
 
 /**
- * Saves state directly and safely.
+ * Writes a candidate before replacing the saved notification state.
  */
 export function saveState(state: PluginState): void {
-  const dir = getStorageDir();
-  const filePath = getStateFilePath();
-
   try {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(filePath, JSON.stringify(state, null, 2), 'utf-8');
+    writeJsonFile(getStateFilePath(), state);
   } catch (err) {
     console.error('[IPQA] Failed to save state.json', err);
   }

@@ -6,7 +6,10 @@
   "scripts": {
     "build": "node build.mjs",
     "build:beta": "node build.mjs --beta",
-    "test": "node --experimental-strip-types --test --test-concurrency=1 tests/*.test.mjs"
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "test:package": "node scripts/test-package.mjs",
+    "verify": "npm run typecheck && npm test && npm run build && npm run test:package"
   },
   "keywords": [
     "komari",

@@ -1,7 +1,6 @@
-import { describe, it, beforeEach, afterEach } from 'node:test';
+import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { useTemporaryStorage } from './fixtures/storage.mjs';
 import { runDailyReport } from '../src/scheduler.ts';
 import { runTestReport } from '../src/test.ts';
 import { collectDailyNodeResults } from '../src/collection.ts';
@@ -133,20 +132,9 @@ function makeMockServer({
 // -----------------------------------------------------------------------------
 
 describe('Alert Unification & Stale Node Regression Test Suite', () => {
-  const testStorageDir = path.resolve(process.cwd(), 'storage');
-
-  beforeEach(() => {
+  beforeEach(t => {
+    useTemporaryStorage(t);
     saveState({ ...INITIAL_STATE });
-  });
-
-  afterEach(() => {
-    try {
-      if (fs.existsSync(testStorageDir)) {
-        fs.rmSync(testStorageDir, { recursive: true, force: true });
-      }
-    } catch {
-      // ignore
-    }
   });
 
   // Case 1 — Theme has semantic change, alerts.log is empty

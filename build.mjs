@@ -3,11 +3,21 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const ROOT_DIR = process.cwd();
+const ROOT_DIR = fileURLToPath(new URL('.', import.meta.url));
 const beta = process.argv.includes('--beta');
-const hash = beta ? execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim() : '';
+const hash = beta ? execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: ROOT_DIR, encoding: 'utf8' }).trim() : '';
 const zipName = beta ? `ipqa-alert-report-beta-${hash}.zip` : 'ipqa-alert-report.zip';
+
+const manifestData = fs.readFileSync(path.join(ROOT_DIR, 'komari-plugin.json'));
+const manifest = JSON.parse(manifestData.toString('utf8'));
+const { version } = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8'));
+if (typeof version !== 'string' || version !== manifest.version || manifest.short !== 'ipqa-alert-report' ||
+    manifest.entry !== 'script.js' || manifest.icon !== 'assets/icon.svg') {
+  throw new Error('Package version or plugin manifest does not match the Komari archive contract');
+}
+const packagedVersion = beta ? `${version}-beta.performance.g${hash}` : version;
 
 console.log('[BUILD] Bundling src/index.ts into script.js...');
 
@@ -18,6 +28,7 @@ esbuild.buildSync({
   platform: 'node',
   format: 'cjs',
   target: 'es2022',
+  define: { __PLUGIN_VERSION__: JSON.stringify(packagedVersion) },
   outfile: path.join(ROOT_DIR, 'script.js'),
   external: [
     'server',
@@ -154,16 +165,10 @@ function writeZip(files, outPath) {
 
 console.log(`[BUILD] Packaging into ${zipName}...`);
 
-let manifestData = fs.readFileSync(path.join(ROOT_DIR, 'komari-plugin.json'));
-if (beta) {
-  const manifest = JSON.parse(manifestData.toString('utf8'));
-  manifestData = Buffer.from(JSON.stringify({ ...manifest, version: `${manifest.version}-beta.performance.g${hash}` }, null, 2));
-}
-
 const filesToZip = [
   {
     name: 'komari-plugin.json',
-    data: manifestData,
+    data: beta ? Buffer.from(JSON.stringify({ ...manifest, version: packagedVersion }, null, 2)) : manifestData,
   },
   {
     name: 'script.js',
@@ -176,7 +181,14 @@ const filesToZip = [
 ];
 
 const zipPath = path.join(ROOT_DIR, zipName);
-writeZip(filesToZip, zipPath);
+const stage = fs.mkdtempSync(path.join(ROOT_DIR, '.package-'));
+try {
+  const candidate = path.join(stage, zipName);
+  writeZip(filesToZip, candidate);
+  fs.renameSync(candidate, zipPath);
+} finally {
+  fs.rmSync(stage, { recursive: true, force: true });
+}
 
 console.log(`[BUILD] Package created successfully: ${zipPath} (${fs.statSync(zipPath).size} bytes)`);
 

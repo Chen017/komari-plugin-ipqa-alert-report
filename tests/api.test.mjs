@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { useTemporaryStorage } from './fixtures/storage.mjs';
 import { registerApiRoutes } from '../src/api/routes.ts';
 import {
   saveDailyReport,
   saveFleetOverview,
 } from '../src/storage/archive-store.ts';
 
-test('api routes: registration and read-only cache endpoints', async () => {
+test('api routes: registration and read-only cache endpoints', async t => {
+  useTemporaryStorage(t);
   const routes = new Map();
 
   const mockServer = {
@@ -42,7 +44,7 @@ test('api routes: registration and read-only cache endpoints', async () => {
     assert.strictEqual(res.statusCode, 200);
     const data = JSON.parse(res.body);
     assert.strictEqual(data.schema_version, 1);
-    assert.strictEqual(data.plugin_version, '0.2.5');
+    assert.strictEqual(data.plugin_version, 'development');
     assert.strictEqual(data.archive_api, true);
     assert.strictEqual(data.change_api, true);
   }

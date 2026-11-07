@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { useTemporaryStorage } from './fixtures/storage.mjs';
 import { classifyScore, classifyScores, compareScoreTransition, getHighestRisk, isNullLike } from '../src/ipqa/risk.ts';
 import { calculateFreshness } from '../src/ipqa/freshness.ts';
 import { normalizeRawIpqa, toBeijingDateString } from '../src/ipqa/archive-normalize.ts';
@@ -10,16 +9,12 @@ import { compareDailyReports } from '../src/ipqa/archive-diff.ts';
 import {
   syncNodeArchives,
   syncIpqaArchives,
-  rebuildNodeDailyReports,
-  buildNodeOverview,
 } from '../src/ipqa/archive-sync.ts';
 import {
-  saveRawArchive,
-  getDailyReport,
   getLatestDailyReport,
   listDailyDates,
   getFleetOverview,
-  getNodeDir,
+  listCachedRawFilenames,
 } from '../src/storage/archive-store.ts';
 
 // ---------------------------------------------------------------------------
@@ -160,7 +155,8 @@ test('Section 32: Same-day later archive replaces canonical daily report', () =>
 // ---------------------------------------------------------------------------
 // Section 29, 30, 31, 38: End-to-end sync, retry, consistency
 // ---------------------------------------------------------------------------
-test('Section 29, 30, 31, 38: Mock server archive sync and API consistency', async () => {
+test('Section 29, 30, 31, 38: Mock server archive sync and API consistency', async t => {
+  useTemporaryStorage(t);
   const nodeUuid = 'mock-node-1';
   const mockNode = { uuid: nodeUuid, name: 'DataWave', weight: 1 };
 
@@ -292,7 +288,8 @@ __IPQA_BATCH_END__
 });
 
 
-test('incomplete archive batch is reported as sync failure', async () => {
+async function assertRejectedBatch(t, returnedFiles, error) {
+  useTemporaryStorage(t);
   const node = { uuid: 'partial-batch-node', name: 'Partial Batch', weight: 1 };
   const manifestOutput = `
 __IPQA_MANIFEST_BEGIN__
@@ -301,13 +298,15 @@ __IPQA_ENTRY__|v4|2026-09-25_040002.json|100|1790308802
 __IPQA_MANIFEST_END__
 `;
   const raw = { Info: { IP: '198.51.100.10' } };
-  const partialFetchOutput = `
-__IPQA_BATCH_BEGIN__
-__IPQA_FILE_BEGIN__|v4|2026-09-25_040001.json
-${Buffer.from(JSON.stringify(raw)).toString('base64')}
-__IPQA_FILE_END__
-__IPQA_BATCH_END__
-`;
+  const fetchOutput = [
+    '__IPQA_BATCH_BEGIN__',
+    ...returnedFiles.flatMap(file => [
+      `__IPQA_FILE_BEGIN__|${file}`,
+      Buffer.from(JSON.stringify(raw)).toString('base64'),
+      '__IPQA_FILE_END__',
+    ]),
+    '__IPQA_BATCH_END__',
+  ].join('\n');
 
   const server = {
     cron: () => {},
@@ -325,7 +324,7 @@ __IPQA_BATCH_END__
           results: [{
             client: node.uuid,
             exit_code: 0,
-            stdout: params?.task_id === 'manifest' ? manifestOutput : partialFetchOutput,
+            stdout: params?.task_id === 'manifest' ? manifestOutput : fetchOutput,
           }],
         };
       }
@@ -335,5 +334,17 @@ __IPQA_BATCH_END__
 
   const result = await syncNodeArchives(server, node, new Date('2026-09-25T00:00:00Z'));
   assert.strictEqual(result.status, 'failed');
-  assert.match(result.error || '', /Incomplete archive batch/);
+  assert.match(result.error || '', error);
+  assert.deepEqual(listCachedRawFilenames(node.uuid, 'v4'), []);
+  assert.deepEqual(listCachedRawFilenames(node.uuid, 'v6'), []);
+}
+
+test('incomplete archive batch is reported as sync failure', t =>
+  assertRejectedBatch(t, ['v4|2026-09-25_040001.json'], /Incomplete archive batch/));
+
+test('an equal-size archive batch cannot substitute a duplicate or a different protocol', async t => {
+  for (const unexpectedFile of ['v4|2026-09-25_040001.json', 'v6|2026-09-25_040002.json']) {
+    await t.test(unexpectedFile, child =>
+      assertRejectedBatch(child, ['v4|2026-09-25_040001.json', unexpectedFile], /Unexpected or duplicate archive/));
+  }
 });

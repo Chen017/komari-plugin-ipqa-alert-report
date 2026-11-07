@@ -258,11 +258,16 @@ export async function syncNodeArchives(
         );
       }
 
+      const expected = new Set(batch.map(entry => `${entry.ipVersion}|${entry.filename}`));
       for (const item of fetched) {
-        if (item.rawJson && typeof item.rawJson === 'object') {
-          saveRawArchive(node.uuid, item.ipVersion, item.filename, item.rawJson);
-          fetchedCount++;
+        const key = `${item.ipVersion}|${item.filename}`;
+        if (!expected.delete(key)) {
+          throw new Error(`Unexpected or duplicate archive in batch: ${key}`);
         }
+      }
+      for (const item of fetched) {
+        saveRawArchive(node.uuid, item.ipVersion, item.filename, item.rawJson);
+        fetchedCount++;
       }
     }
 

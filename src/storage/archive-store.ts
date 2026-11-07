@@ -6,6 +6,7 @@ import type {
   IpVersion,
 } from '../ipqa/types.ts';
 import { getStorageDir } from '../state.ts';
+import { writeJsonFile } from './json.ts';
 
 export function getIpqaDir(): string {
   return path.join(getStorageDir(), 'ipqa');
@@ -41,44 +42,27 @@ export function saveArchiveTimes(uuid: string, times: Record<string, number>): v
 export function replaceDailyReports(uuid: string, reports: IpqaDailyPairedReport[]): void {
   if (reports.length === 0) return;
   const dates = new Set(reports.map(report => report.date));
-  for (const report of reports) {
-    if (!isValidArchiveDate(report.date)) throw new Error('Invalid IPQA archive date');
-    safeWriteJson(path.join(getNodeDir(uuid), 'daily', `${report.date}.json`), report);
+  for (const date of dates) {
+    if (!isValidArchiveDate(date)) throw new Error('Invalid IPQA archive date');
   }
-  safeWriteJson(path.join(getNodeDir(uuid), 'latest.json'), reports[0]);
+  const nodeDir = getNodeDir(uuid);
+  for (const report of reports) {
+    safeWriteJson(path.join(nodeDir, 'daily', `${report.date}.json`), report);
+  }
+  safeWriteJson(path.join(nodeDir, 'latest.json'), reports[0]);
   for (const date of listDailyDates(uuid)) {
-    if (!dates.has(date)) fs.unlinkSync(path.join(getNodeDir(uuid), 'daily', `${date}.json`));
+    if (!dates.has(date)) fs.unlinkSync(path.join(nodeDir, 'daily', `${date}.json`));
   }
 }
 
 /**
  * Windows-safe JSON write with directory creation and fallback.
  */
-export function safeWriteJson(filePath: string, data: any): void {
-  const dir = path.dirname(filePath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-
-  const content = JSON.stringify(data, null, 2);
-  const tempPath = `${filePath}.tmp.${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
+export function safeWriteJson(filePath: string, data: unknown): void {
   try {
-    fs.writeFileSync(tempPath, content, 'utf-8');
-    try {
-      fs.renameSync(tempPath, filePath);
-    } catch {
-      // Fallback on Windows if rename fails due to file lock
-      fs.copyFileSync(tempPath, filePath);
-      fs.unlinkSync(tempPath);
-    }
+    writeJsonFile(filePath, data, true);
   } catch (err) {
     console.error(`[IPQA] Failed to write JSON to ${filePath}:`, err);
-    try {
-      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-    } catch {
-      // ignore cleanup failure; preserve the original write error
-    }
     throw err;
   }
 }

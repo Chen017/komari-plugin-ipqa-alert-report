@@ -32,7 +32,11 @@ test('daily rebuild publishes latest once without rereading it for every histori
     for (const report of reports) assert.deepEqual(getDailyReport('node-a', report.date), report);
     replaceDailyReports('node-a', reports.slice(0, 2));
     assert.deepEqual(listDailyDates('node-a'), reports.slice(0, 2).map(report => report.date));
-    assert.throws(() => replaceDailyReports('node-a', [{ date: '../invalid' }]), /Invalid IPQA archive date/);
+    assert.throws(() => replaceDailyReports('node-a', [
+      { ...reports[0], v4: { scores: { IPQS: 70 } } },
+      { date: '../invalid' },
+    ]), /Invalid IPQA archive date/);
+    assert.deepEqual(getDailyReport('node-a', reports[0].date), reports[0]);
     assert.deepEqual(getLatestDailyReport('node-a'), reports[0]);
   } finally {
     fs.readFileSync = originalRead;

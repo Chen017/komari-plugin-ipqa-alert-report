@@ -3,6 +3,7 @@ import { registerScheduler, type ServerContext } from './scheduler.ts';
 import { runTestReport } from './test.ts';
 import { registerApiRoutes } from './api/routes.ts';
 import { loadConfig } from './config.ts';
+import { PLUGIN_VERSION } from './version.ts';
 
 // Komari plugin runtime injects 'server' module or global definePlugin
 let serverInstance: ServerContext;
@@ -29,7 +30,7 @@ export function isAdminPrincipal(principal: any): boolean {
  * Plugin lifecycle: load()
  */
 export async function load(): Promise<void> {
-  console.log('[IPQA] Loading IPQA Alert Report plugin v0.2.5...');
+  console.log(`[IPQA] Loading IPQA Alert Report plugin v${PLUGIN_VERSION}...`);
 
   if (!serverInstance) {
     try {

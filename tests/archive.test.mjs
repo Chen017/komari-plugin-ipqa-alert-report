@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { useTemporaryStorage } from './fixtures/storage.mjs';
 import {
   buildManifestCommand,
   parseManifestOutput,
@@ -274,7 +275,8 @@ test('archive-diff: semantic and generic leaf diff', () => {
   assert.strictEqual(leafDiff.after, 'beta');
 });
 
-test('archive-store: persistence across cache operations', () => {
+test('archive-store: persistence across cache operations', t => {
+  useTemporaryStorage(t);
   const nodeUuid = 'store-test-node';
   const testReport = {
     schemaVersion: 1,
@@ -335,7 +337,8 @@ test('archive-normalize: absent mtimeEpoch falls back to filename date and naive
   assert.ok(!normalized.timestamp.endsWith('Z'), 'Naive fallback must not end with Z');
 });
 
-test('archive-sync: rebuildNodeDailyReports maps manifest mtime into normalized reports', () => {
+test('archive-sync: rebuildNodeDailyReports maps manifest mtime into normalized reports', t => {
+  useTemporaryStorage(t);
   const nodeUuid = 'mtime-test-node';
   saveRawArchive(nodeUuid, 'v4', '2026-09-21_130000.json', { Info: { IP: '1.2.3.4' } });
 
