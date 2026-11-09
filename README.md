@@ -67,6 +67,7 @@
 - [Komari Emerald Suite](https://github.com/Chen017/komari-emerald-suite)：生态聚合展示主页
 - [Komari Emerald Insights](https://github.com/Chen017/komari-theme-emerald-insights)：现代化前端监控主题
 - [Komari Plugin: Availability History](https://github.com/Chen017/komari-plugin-availability-history)：节点在线率历史账本插件
+- [Komari Plugin: CPU Steal Monitor](https://github.com/Chen017/komari-plugin-cpu-steal-monitor)：独立的两分钟 CPU Steal 数据/API 插件；可选通过 Emerald Insights 展示图表
 - [IP-Quality-Archive](https://github.com/Chen017/IP-Quality-Archive)：节点端 IP 质量采集工具
 
 ---
