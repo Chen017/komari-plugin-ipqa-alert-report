@@ -28,11 +28,11 @@ npm run verify
 
 `npm run build:beta` 生成带提交号的 `ipqa-alert-report-beta-<sha>.zip`。Beta 版本写入包内 manifest 和脚本，源文件版本、插件标识及存储目录保持一致。
 
-## CI 与手动发布
+## CI 与发布
 
-CI 在面向 `main` 的 PR、涉及工程文件的 `main` 推送和手动运行时执行。工作流使用 Node.js 24、npm 下载缓存和锁文件安装依赖，依次运行 `verify` 的全部步骤。README 和 `docs/` 的纯文档推送跳过 CI，PR 仍执行检查。手动运行可下载已验证的正式 ZIP，适合提交给现有的手动 GitHub Release 流程。
+CI 在面向 `main` 的 PR、涉及工程文件的 `main` 推送和手动运行时执行。工作流使用 Node.js 24、npm 下载缓存和锁文件安装依赖，依次运行 `verify` 的全部步骤。README 和 `docs/` 的纯文档推送跳过 CI，PR 仍执行检查。手动运行可下载已验证的正式 ZIP。
 
-发布前用 `npm version <版本> --no-git-tag-version` 同步 `package.json` 与 `package-lock.json`，同时更新 `komari-plugin.json`。核对版本、构建和包验证结果，再为经验证的提交创建对应 `v<版本>` Release 并附上正式 ZIP。保留现有资产文件名。
+发布前用 `npm version <版本> --no-git-tag-version` 同步 `package.json` 与 `package-lock.json`，同时更新 `komari-plugin.json`。推送到 `main` 后，工作流检查 `v<版本>` 是否已有完整 ZIP。需要发布时，发布任务校验标签指向该提交，复用同次验证生成的 `ipqa-alert-report.zip` 并上传到 Release。发布失败可检查 Actions 日志并重跑原工作流。标签指向其他提交时，核对版本是否被复用。仓库写权限仅由发布任务取得。
 
 ## 兼容约定与故障排查
 

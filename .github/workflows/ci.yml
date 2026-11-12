@@ -14,14 +14,16 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
     name: Test and verify Komari package
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    outputs:
+      release_tag: ${{ steps.release.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -32,11 +34,80 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm run verify
-      - name: Store verified ZIP for manual release
-        if: github.event_name == 'workflow_dispatch'
+      - name: Check whether this version needs its release ZIP
+        id: release
+        if: github.repository == 'Chen017/komari-plugin-ipqa-alert-report' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ZIP: ipqa-alert-report.zip
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release version: $version" >&2
+            exit 1
+          fi
+          tag="v$version"
+          response="$RUNNER_TEMP/release.json"
+          error_log="$RUNNER_TEMP/release-error.txt"
+          if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" > "$response" 2> "$error_log"; then
+            asset_state=$(node -e 'const release = require(process.argv[1]); console.log(release.assets.some(asset => asset.name === process.env.RELEASE_ZIP && asset.state === "uploaded" && asset.size > 0) ? "present" : "missing")' "$response")
+            if [[ "$asset_state" == present ]]; then
+              echo "$tag already has a published ZIP."
+              exit 0
+            fi
+          elif ! grep -q 'HTTP 404' "$error_log"; then
+            cat "$error_log" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Store verified ZIP
+        if: steps.release.outputs.tag != '' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           path: ipqa-alert-report.zip
           archive: false
           if-no-files-found: error
           retention-days: 7
+
+  release:
+    name: Publish verified Komari ZIP
+    needs: verify
+    if: needs.verify.outputs.release_tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ipqa-alert-report.zip
+          path: release
+      - name: Create or verify release tag
+        env:
+          RELEASE_TAG: ${{ needs.verify.outputs.release_tag }}
+        run: |
+          tag_ref="refs/tags/$RELEASE_TAG"
+          tags=$(git ls-remote origin "$tag_ref" "$tag_ref^{}")
+          tag_sha=$(awk -v ref="$tag_ref" '$2 == ref {sha=$1} $2 == ref "^{}" {peeled=$1} END {print (peeled ? peeled : sha)}' <<< "$tags")
+          if [[ -n "$tag_sha" ]]; then
+            if [[ "$tag_sha" != "$GITHUB_SHA" ]]; then
+              echo "Tag $RELEASE_TAG already targets $tag_sha, expected $GITHUB_SHA" >&2
+              exit 1
+            fi
+          else
+            git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              tag -a "$RELEASE_TAG" "$GITHUB_SHA" -m "Release $RELEASE_TAG"
+            git push origin "$tag_ref"
+          fi
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3
+        with:
+          tag_name: ${{ needs.verify.outputs.release_tag }}
+          name: ${{ needs.verify.outputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          files: release/ipqa-alert-report.zip

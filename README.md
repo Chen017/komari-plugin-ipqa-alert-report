@@ -80,4 +80,4 @@
 
 ## 安装与开发
 
-从本仓库的 GitHub Releases 下载 `ipqa-alert-report.zip`，在 Komari 管理后台的插件管理中上传。选择已安装 IPQA 的节点，随后可在插件配置中手动测试报告。开发环境、离线验证、打包及手动发布流程见 [工程维护指南](docs/MAINTENANCE.md)。
+从本仓库的 GitHub Releases 下载 `ipqa-alert-report.zip`，在 Komari 管理后台的插件管理中上传。选择已安装 IPQA 的节点，随后可在插件配置中手动测试报告。开发环境、离线验证、打包及自动发布见 [工程维护指南](docs/MAINTENANCE.md)。
