@@ -19,117 +19,94 @@ concurrency:
 
 jobs:
   verify:
-    name: Test and verify package
+    name: Test and verify Komari package
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
-      publish: ${{ steps.plan.outputs.publish }}
-      version: ${{ steps.plan.outputs.version }}
-      tag: ${{ steps.plan.outputs.release_tag }}
-      sha: ${{ steps.version.outputs.sha }}
+      release_tag: ${{ steps.release.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
           cache: npm
-      - name: Test release decisions
-        run: node --test scripts/release.test.mjs
-      - name: Detect installable changes
-        id: plan
+      - run: npm ci --no-audit --no-fund
+      - run: npm run verify
+      - name: Check whether this version needs its release ZIP
+        id: release
         if: github.repository == 'Chen017/komari-plugin-ipqa-alert-report' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_ZIP: ipqa-alert-report.zip
         run: |
-          latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')
-          node scripts/release.mjs plan "$latest_tag" >> "$GITHUB_OUTPUT"
-      - name: Prepare version for verification
-        id: version
-        if: steps.plan.outputs.publish == 'true'
-        env:
-          RELEASE_VERSION: ${{ steps.plan.outputs.version }}
-          RELEASE_TAG: ${{ steps.plan.outputs.release_tag }}
-        run: |
-          node scripts/release.mjs prepare "$RELEASE_VERSION"
-          git add -- package.json package-lock.json komari-plugin.json
-          if ! git diff --cached --quiet; then
-            release_date=$(git show -s --format=%cI "$GITHUB_SHA")
-            GIT_AUTHOR_DATE="$release_date" GIT_COMMITTER_DATE="$release_date" \
-              git -c user.name='github-actions[bot]' \
-                -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-                commit -m "chore(release): $RELEASE_TAG"
+          version=$(node -p "require('./package.json').version")
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release version: $version" >&2
+            exit 1
           fi
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - run: npm ci --no-audit --no-fund
-      - run: npm run verify
+          tag="v$version"
+          response="$RUNNER_TEMP/release.json"
+          error_log="$RUNNER_TEMP/release-error.txt"
+          if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" > "$response" 2> "$error_log"; then
+            asset_state=$(node -e 'const release = require(process.argv[1]); console.log(release.assets.some(asset => asset.name === process.env.RELEASE_ZIP && asset.state === "uploaded" && asset.size > 0) ? "present" : "missing")' "$response")
+            if [[ "$asset_state" == present ]]; then
+              echo "$tag already has a published ZIP."
+              exit 0
+            fi
+          elif ! grep -q 'HTTP 404' "$error_log"; then
+            cat "$error_log" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: Store verified ZIP
-        if: steps.plan.outputs.publish == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.release.outputs.tag != '' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: verified-package
           path: ipqa-alert-report.zip
-          compression-level: 0
+          archive: false
           if-no-files-found: error
           retention-days: 7
 
   release:
-    name: Publish verified ZIP
+    name: Publish verified Komari ZIP
     needs: verify
-    if: needs.verify.outputs.publish == 'true'
+    if: needs.verify.outputs.release_tag != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: verified-package
+          name: ipqa-alert-report.zip
           path: release
-      - name: Commit verified version and create tag
-        id: tag
+      - name: Create or verify release tag
         env:
-          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
-          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
-          EXPECTED_SHA: ${{ needs.verify.outputs.sha }}
+          RELEASE_TAG: ${{ needs.verify.outputs.release_tag }}
         run: |
-          node scripts/release.mjs prepare "$RELEASE_VERSION"
-          git add -- package.json package-lock.json komari-plugin.json
-          if ! git diff --cached --quiet; then
-            release_date=$(git show -s --format=%cI "$GITHUB_SHA")
-            GIT_AUTHOR_DATE="$release_date" GIT_COMMITTER_DATE="$release_date" \
-              git -c user.name='github-actions[bot]' \
-                -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-                commit -m "chore(release): $RELEASE_TAG"
-          fi
-          commit_sha=$(git rev-parse HEAD)
-          [[ "$commit_sha" == "$EXPECTED_SHA" ]] || { echo "Verified version commit does not match." >&2; exit 1; }
           tag_ref="refs/tags/$RELEASE_TAG"
           tags=$(git ls-remote origin "$tag_ref" "$tag_ref^{}")
           tag_sha=$(awk -v ref="$tag_ref" '$2 == ref {sha=$1} $2 == ref "^{}" {peeled=$1} END {print (peeled ? peeled : sha)}' <<< "$tags")
           if [[ -n "$tag_sha" ]]; then
-            [[ "$tag_sha" == "$commit_sha" ]] || { echo "Tag $RELEASE_TAG already targets $tag_sha." >&2; exit 1; }
-          fi
-          git push origin "HEAD:refs/heads/main"
-          if [[ -z "$tag_sha" ]]; then
+            if [[ "$tag_sha" != "$GITHUB_SHA" ]]; then
+              echo "Tag $RELEASE_TAG already targets $tag_sha, expected $GITHUB_SHA" >&2
+              exit 1
+            fi
+          else
             git -c user.name='github-actions[bot]' \
               -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-              tag -a "$RELEASE_TAG" "$commit_sha" -m "Release $RELEASE_TAG"
+              tag -a "$RELEASE_TAG" "$GITHUB_SHA" -m "Release $RELEASE_TAG"
             git push origin "$tag_ref"
           fi
-          echo "sha=$commit_sha" >> "$GITHUB_OUTPUT"
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3
         with:
-          tag_name: ${{ needs.verify.outputs.tag }}
-          name: ${{ needs.verify.outputs.tag }}
-          target_commitish: ${{ steps.tag.outputs.sha }}
+          tag_name: ${{ needs.verify.outputs.release_tag }}
+          name: ${{ needs.verify.outputs.release_tag }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
           overwrite_files: true
           fail_on_unmatched_files: true

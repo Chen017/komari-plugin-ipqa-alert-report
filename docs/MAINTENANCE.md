@@ -32,7 +32,7 @@ npm run verify
 
 CI 在面向 `main` 的 PR、涉及工程文件的 `main` 推送和手动运行时执行。工作流使用 Node.js 24、npm 下载缓存和锁文件安装依赖，依次运行 `verify` 的全部步骤。README 和 `docs/` 的纯文档推送跳过 CI，PR 仍执行检查。手动运行可下载已验证的正式 ZIP。
 
-推送到 `main` 后，工作流对比最新正式 Release，检测插件源码、清单和构建输入的改动；需要发布时自动递增补丁版本，同步 `package.json`、锁文件和 `komari-plugin.json`，验证后创建标签和 Release，复用同次验证生成的 `ipqa-alert-report.zip`。纯文档、测试和 CI 改动本身不会触发新版本。发布失败可检查 Actions 日志并重跑原工作流；标签指向其他提交时应检查冲突。仓库写权限仅由发布任务取得。
+发布前用 `npm version <版本> --no-git-tag-version` 同步 `package.json` 与 `package-lock.json`，同时更新 `komari-plugin.json`。推送到 `main` 后，工作流检查 `v<版本>` 是否已有完整 ZIP。需要发布时，发布任务校验标签指向该提交，复用同次验证生成的 `ipqa-alert-report.zip` 并上传到 Release。发布失败可检查 Actions 日志并重跑原工作流。标签指向其他提交时，核对版本是否被复用。仓库写权限仅由发布任务取得。
 
 ## 兼容约定与故障排查
 
